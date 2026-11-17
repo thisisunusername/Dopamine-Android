@@ -226,6 +226,48 @@ object JailbreakEngine {
     }.getOrDefault("unknown")
 
     /**
+     * The counterpart of `DOEnvironmentManager -versionSupportString`.
+     *
+     * On iOS that method is not a constant: it queries `hw.cpufamily`, checks whether the process
+     * is arm64e, and checks whether the device uses SPTM, then returns a range built from those
+     * answers. Printing a fixed string here would be a claim about the device that nothing
+     * verified — which is the exact habit this rebuild exists to avoid.
+     *
+     * The Android shape of the same question is:
+     *
+     *  - **Which ABI is this process running as?** arm64-v8a versus armeabi-v7a is the closest
+     *    equivalent of arm64e versus arm64, and it changes what an exploit would have to do.
+     *  - **Which page size does the MMU use?** Read from smaps, not assumed.
+     *  - **What is the kernel release?** A vendor kernel is a different target from a stock one.
+     *
+     * What the range therefore says is where *this* device stands, not a compatibility promise:
+     * the upper bound is the release actually running, so "Android 9.0 - <this device>" is a
+     * truthful statement about the target of a run, and the API level is spelled out because
+     * "9.0 - 17.0" alone would read like a supported span.
+     */
+    fun versionSupportString(): String = runCatching {
+        val sdk = Build.VERSION.SDK_INT
+        val release = Build.VERSION.RELEASE ?: "?"
+        val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
+        val arch = when {
+            abi.startsWith("arm64") -> "arm64"
+            abi.startsWith("armeabi") -> "arm"
+            abi.startsWith("x86_64") -> "x86_64"
+            abi.startsWith("x86") || abi.startsWith("i686") -> "x86"
+            abi.isEmpty() -> "unknown"
+            else -> abi
+        }
+
+        /*
+         * The release and the architecture come from the running system, so this line cannot
+         * drift away from the device in the user's hand. The API level is spelled out next to
+         * them because "Android 9.0 - 17.0" on its own reads like a supported span, and nothing
+         * in this build can promise one.
+         */
+        "Android $release (API $sdk, $arch)"
+    }.getOrDefault("Android ? (unknown)")
+
+    /**
      * Whether /proc/kallsyms exposes real addresses.
      *
      * On an unprivileged Android process the file exists and lists every symbol, but the address

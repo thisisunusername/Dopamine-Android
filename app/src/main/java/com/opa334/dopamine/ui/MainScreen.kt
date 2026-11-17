@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opa334.dopamine.R
+import com.opa334.dopamine.core.JailbreakEngine
 import com.opa334.dopamine.core.StepEvent
 
 /** One line of the log shown inside the expanded button. */
@@ -117,7 +118,13 @@ fun MainScreen(
             // ---- Header ----
             Column(Modifier.padding(start = 5.dp)) {
                 DopamineHeader(
-                    subtitle = stringResource(R.string.subtitle_version),
+                    /*
+                     * The version line is built from the device, not from a resource. On iOS this
+                     * is `DOEnvironmentManager -versionSupportString`, which probes the CPU family
+                     * and returns a range; a hard-coded "Android 9.0 - 17.0" would be a claim
+                     * about the user's device that nothing checked.
+                     */
+                    subtitle = remember { JailbreakEngine.versionSupportString() },
                     credits = stringResource(R.string.subtitle_credits),
                 )
             }

@@ -7,7 +7,6 @@
     <string name="app_name">Dopamine</string>
 
     <!-- Subtitle under the mark. Deliberately over-precise, matching the iOS app's joke. -->
-    <string name="subtitle_version">Android 9.0 - 17.0 (arm64)</string>
     <string name="subtitle_credits">by opa334, évelyne (ElleKit)</string>
 
     <!-- Action card -->

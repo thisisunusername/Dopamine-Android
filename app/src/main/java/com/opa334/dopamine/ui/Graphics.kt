@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -56,11 +57,21 @@ fun DopamineHeader(
         /*
          * 40 dp tall and 202.5 dp wide: Dopamine@3x.png is 810x160, an aspect ratio of exactly
          * 5.0625, and iOS pins only the height, so the width follows from the bitmap.
+         *
+         * The 7 dp downward offset reproduces DOHeaderView's
+         * `imageWithAlignmentRectInsets:UIEdgeInsetsMake(7, 0, -7, 0)`. That is not decoration:
+         * iOS slides the artwork down by 7 pt while telling the stack it still occupies its
+         * original box, so the 2 pt spacing to the version line collapses and the wordmark sits
+         * tight against it. `offset` is used rather than padding because Compose rejects negative
+         * padding at runtime, and because the intent here is a visual shift that must not change
+         * the measured height - which is exactly what alignmentRectInsets does.
          */
         Image(
             painter = painterResource(R.drawable.dopamine_wordmark),
             contentDescription = "Dopamine",
-            modifier = Modifier.height(HeaderArtHeight),
+            modifier = Modifier
+                .height(HeaderArtHeight)
+                .offset(y = 7.dp),
             contentScale = ContentScale.FillHeight,
         )
 

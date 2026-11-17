@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Chinese. The English strings live in `values/strings.xml` and are the fallback. -->
 <resources>
-    <string name="subtitle_version">Android 9.0 - 17.0 (arm64)</string>
     <string name="subtitle_credits">by opa334, évelyne (ElleKit)</string>
 
     <string name="menu_settings">设置</string>
