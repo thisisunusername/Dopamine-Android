@@ -50,6 +50,7 @@
     <string name="settings_pac_bypass">PAC Bypass</string>
     <string name="settings_ppl_bypass">PPL Bypass</string>
     <string name="settings_none">None</string>
+    <string name="settings_recommended">Recommended</string>
     <string name="settings_exploit_note">The lists above are informational. Nothing on this screen runs a kernel exploit; see About for what is and is not implemented.</string>
 
     <!-- Settings: hide / unhide jailbreak -->

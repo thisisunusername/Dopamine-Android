@@ -99,7 +99,17 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
-                .verticalScroll(rememberScrollState())
+                /*
+                 * No verticalScroll here, and weight(1f) below instead of fillMaxSize on the
+                 * spacer.
+                 *
+                 * The previous version combined fillMaxSize() with verticalScroll() and a
+                 * weighted spacer in the same Column: an infinite height constraint cannot be
+                 * distributed through weight(), so Compose threw while measuring and the app
+                 * died on the first tap. The screen is now a fixed-height column that fills the
+                 * window, with the action card pinned to the top and the button pinned to the
+                 * bottom; nothing on it needs to scroll.
+                 */
                 .padding(horizontal = OuterPadding),
         ) {
             Spacer(Modifier.height(28.dp))

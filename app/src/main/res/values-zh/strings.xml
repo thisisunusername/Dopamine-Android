@@ -38,6 +38,7 @@
     <string name="settings_pac_bypass">PAC 绕过</string>
     <string name="settings_ppl_bypass">PPL 绕过</string>
     <string name="settings_none">无</string>
+    <string name="settings_recommended">推荐</string>
     <string name="settings_exploit_note">以上列表仅供参考。此页面不会执行任何内核漏洞利用；实际实现了什么请见「关于」。</string>
 
     <string name="settings_section_actions">操作</string>

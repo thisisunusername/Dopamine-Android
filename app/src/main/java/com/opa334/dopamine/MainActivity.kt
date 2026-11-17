@@ -30,6 +30,8 @@ import com.opa334.dopamine.ui.AboutScreen
 import com.opa334.dopamine.ui.BlackoutSequence
 import com.opa334.dopamine.ui.DopamineColors
 import com.opa334.dopamine.ui.DopamineTheme
+import com.opa334.dopamine.ui.ExploitPickerScreen
+import com.opa334.dopamine.ui.Exploits
 import com.opa334.dopamine.ui.FirstRunWizard
 import com.opa334.dopamine.ui.LogRow
 import com.opa334.dopamine.ui.MainScreen
@@ -61,7 +63,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { Main, Settings, About }
+private enum class Screen { Main, Settings, Exploits, About }
 
 /** Full-screen things drawn on top of the current screen. */
 private enum class Overlay { None, Wizard, Blackout, Userspace, SpringBoard }
@@ -81,6 +83,14 @@ private fun DopamineApp(onFinish: () -> Unit) {
     var screen by remember { mutableStateOf(Screen.Main) }
     var overlay by remember { mutableStateOf(Overlay.None) }
     var ui by remember { mutableStateOf(MainUiState()) }
+
+    // The selected exploit is a real preference: it survives leaving the app and is the name the
+    // settings screen shows on its one-line entry point. Default is the first (recommended) one.
+    var selectedExploit by remember {
+        mutableStateOf(
+            JailbreakState.selectedExploit(context) ?: Exploits.first(),
+        )
+    }
 
     // Resolved during composition: the run is started from a coroutine, where stringResource()
     // is not allowed.
@@ -212,6 +222,7 @@ private fun DopamineApp(onFinish: () -> Unit) {
                     onSudoPasswordChange = { JailbreakState.setSudoPassword(context, it) },
                     jailbroken = jailbroken,
                     hidden = JailbreakState.isHidden(context),
+                    selectedExploit = selectedExploit,
                     onToggleHidden = {
                         /*
                          * Hide and unhide change the daemon, not just a flag.
@@ -247,6 +258,16 @@ private fun DopamineApp(onFinish: () -> Unit) {
                         }
                     },
                     onBack = { screen = Screen.Main },
+                    onOpenExploits = { screen = Screen.Exploits },
+                )
+
+                Screen.Exploits -> ExploitPickerScreen(
+                    selected = selectedExploit,
+                    onSelect = {
+                        selectedExploit = it
+                        JailbreakState.setSelectedExploit(context, it)
+                    },
+                    onBack = { screen = Screen.Settings },
                 )
 
                 Screen.About -> AboutScreen(

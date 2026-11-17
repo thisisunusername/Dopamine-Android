@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,19 +25,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.opa334.dopamine.R
 import kotlinx.coroutines.delay
+
+/** The height DOHeaderView pins the artwork to. */
+private val HeaderArtHeight = 40.dp
 
 /**
  * The header, matching DOHeaderView.
  *
- * iOS builds a vertical UIStackView with 2 pt spacing: the logo at a fixed 40 pt height, then
+ * iOS builds a vertical UIStackView with 2 pt spacing: the artwork at a fixed 40 pt height, then
  * the dark-mode version string in white 14 pt medium, then the credits line in white 60% 14 pt
- * regular. The logo's image is `DopamineLogo.pdf`, which builds a solid disc, so the mark here
- * is a filled circle rather than a wordmark.
+ * regular. `DOMainViewController` loads `[UIImage imageNamed:@"Dopamine"]` for that artwork, and
+ * that asset is a stylised *wordmark* - the letters "Dopamine" - not the ring from the app icon.
+ * Shipping the ring here was wrong twice over: wrong asset, and drawn by hand on top of that.
  */
 @Composable
 fun DopamineHeader(
@@ -44,7 +53,16 @@ fun DopamineHeader(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, horizontalAlignment = Alignment.Start) {
-        DopamineMark(size = 40.dp)
+        /*
+         * 40 dp tall and 202.5 dp wide: Dopamine@3x.png is 810x160, an aspect ratio of exactly
+         * 5.0625, and iOS pins only the height, so the width follows from the bitmap.
+         */
+        Image(
+            painter = painterResource(R.drawable.dopamine_wordmark),
+            contentDescription = "Dopamine",
+            modifier = Modifier.height(HeaderArtHeight),
+            contentScale = ContentScale.FillHeight,
+        )
 
         Spacer(Modifier.height(2.dp))
 
@@ -243,14 +261,20 @@ fun UserspaceBlink(
         contentAlignment = Alignment.Center,
     ) {
         /*
-         * The real mark, in white, at a size that suits a full-screen blink. DopamineMark draws the
-         * ring from the app icon (outer radius 60, inner 34, notch near 1 o'clock), so this is the
-         * Dopamine logo rather than a generic shape. The Apple glyph belongs to the blackout
-         * sequence - a userspace restart must not show it, because nothing is rebooting.
+         * The wordmark, not the ring, and not the Apple glyph.
+         *
+         * This is the screen shown while the userspace restarts, and what iOS puts there is the
+         * Dopamine logo - the same artwork as the header. Drawing the ring here was the "一片白"
+         * the screen kept showing: a white shape on black with no word in it. The Apple glyph
+         * belongs to the blackout sequence instead, because that one ends with the app closing.
          */
-        DopamineMark(
-            modifier = Modifier.graphicsLayer { alpha = markAlpha.value },
-            size = 120.dp,
+        Image(
+            painter = painterResource(R.drawable.dopamine_wordmark),
+            contentDescription = "Dopamine",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .width(220.dp)
+                .graphicsLayer { alpha = markAlpha.value },
         )
     }
 }

@@ -20,7 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.HorizontalDivider
@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -71,7 +72,7 @@ fun DetailScaffold(
         ) {
             IconButton(onClick = onBack) {
                 Icon(
-                    imageVector = Icons.Filled.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = stringResource(R.string.cd_back),
                     tint = DopamineColors.TextPrimary,
                 )
@@ -83,9 +84,19 @@ fun DetailScaffold(
                 fontWeight = FontWeight.Bold,
             )
         }
+        /*
+         * weight(1f), never fillMaxSize().
+         *
+         * Inside a Column that already fills the screen, fillMaxSize() passes an unbounded
+         * maximum height down, and a scrollable child cannot measure its content against an
+         * infinite constraint - Compose throws instead of laying out. weight(1f) hands the
+         * remaining height to the list and leaves it free to grow, which is what a scrolling
+         * page needs. This is what made both Settings and About crash on open.
+         */
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .weight(1f)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
         ) {
@@ -111,8 +122,10 @@ fun SettingsScreen(
     onSudoPasswordChange: (String) -> Unit,
     jailbroken: Boolean,
     hidden: Boolean,
+    selectedExploit: String,
     onToggleHidden: () -> Unit,
     onRemoveJailbreak: () -> Unit,
+    onOpenExploits: () -> Unit,
     onBack: () -> Unit,
 ) {
     DetailScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
@@ -125,16 +138,15 @@ fun SettingsScreen(
         SectionLabel(stringResource(R.string.settings_section_exploits))
         SettingsCard {
             /*
-             * The same three boxes iOS shows: the kernel exploit in use, plus the PAC and PPL
-             * bypasses where the target needs them. The picked value is the first entry of each
-             * list, which is how Dopamine chooses a default (highest priority that is supported),
-             * and "None" is used where no bypass applies.
+             * One entry point, as on iOS: the settings screen shows which kernel exploit is
+             * selected, and tapping it opens a list to choose from. The full list does not belong
+             * on this page - nine rows of names would bury everything else.
              */
             ChoiceRow(
                 title = stringResource(R.string.settings_kernel_exploit),
-                value = KernelExploit.entries.first().displayName,
+                value = selectedExploit,
                 selected = true,
-                onClick = {},
+                onClick = onOpenExploits,
             )
             CardLine()
             ChoiceRow(
@@ -142,6 +154,7 @@ fun SettingsScreen(
                 value = stringResource(R.string.settings_none),
                 selected = false,
                 onClick = {},
+                enabled = false,
             )
             CardLine()
             ChoiceRow(
@@ -149,20 +162,8 @@ fun SettingsScreen(
                 value = stringResource(R.string.settings_none),
                 selected = false,
                 onClick = {},
+                enabled = false,
             )
-            CardLine()
-            KernelExploit.entries.forEachIndexed { index, exploit ->
-                if (index > 0) CardLine()
-                InfoRow(exploit.displayName, exploit.platforms)
-            }
-            CardLine()
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text(
-                    text = stringResource(R.string.settings_exploit_note),
-                    color = DopamineColors.TextSecondary,
-                    fontSize = 12.sp,
-                )
-            }
         }
 
         Spacer(Modifier.height(24.dp))
@@ -184,36 +185,38 @@ fun SettingsScreen(
          * paragraph under it is the original iOS hint, kept verbatim: it is the only place that
          * explains what the option does not do, and trimming it would make the button look like a
          * stronger guarantee than it is.
+         *
+         * The row is always present but disabled until there is a jailbreak to hide. Hiding it
+         * instead made the section look like it did not exist.
          */
-        if (jailbroken) {
-            SectionLabel(stringResource(R.string.settings_section_actions))
-            SettingsCard {
-                ChoiceRow(
-                    title = stringResource(
-                        if (hidden) R.string.settings_unhide_jailbreak
-                        else R.string.settings_hide_jailbreak,
-                    ),
-                    selected = false,
-                    onClick = onToggleHidden,
+        SectionLabel(stringResource(R.string.settings_section_actions))
+        SettingsCard {
+            ChoiceRow(
+                title = stringResource(
+                    if (hidden) R.string.settings_unhide_jailbreak
+                    else R.string.settings_hide_jailbreak,
+                ),
+                selected = false,
+                enabled = jailbroken,
+                onClick = onToggleHidden,
+            )
+            CardLine()
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text(
+                    text = stringResource(R.string.settings_hide_jailbreak_hint),
+                    color = DopamineColors.TextSecondary,
+                    fontSize = 12.sp,
                 )
-                CardLine()
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text(
-                        text = stringResource(R.string.settings_hide_jailbreak_hint),
-                        color = DopamineColors.TextSecondary,
-                        fontSize = 12.sp,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = stringResource(R.string.settings_hide_jailbreak_note),
-                        color = DopamineColors.TextSecondary,
-                        fontSize = 12.sp,
-                    )
-                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.settings_hide_jailbreak_note),
+                    color = DopamineColors.TextSecondary,
+                    fontSize = 12.sp,
+                )
             }
-
-            Spacer(Modifier.height(24.dp))
         }
+
+        Spacer(Modifier.height(24.dp))
 
         SectionLabel(stringResource(R.string.settings_section_package_manager))
         SettingsCard {
@@ -266,35 +269,33 @@ fun SettingsScreen(
         }
 
         /*
-         * Remove Jailbreak moved here from the main screen, and it is only offered while there is
-         * something to remove.
+         * Remove Jailbreak, moved here from the main screen. Always listed so the option is
+         * discoverable; disabled until there is a jailbreak to remove.
          */
-        if (jailbroken) {
-            Spacer(Modifier.height(24.dp))
-            SettingsCard {
-                Column(Modifier.padding(16.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable(onClick = onRemoveJailbreak),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.settings_remove_jailbreak),
-                            color = DopamineColors.Danger,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(24.dp))
+        SettingsCard {
+            Column(Modifier.padding(16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(enabled = jailbroken, onClick = onRemoveJailbreak),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
-                        text = stringResource(R.string.settings_remove_jailbreak_note),
-                        color = DopamineColors.TextSecondary,
-                        fontSize = 12.sp,
+                        text = stringResource(R.string.settings_remove_jailbreak),
+                        color = if (jailbroken) DopamineColors.Danger else DopamineColors.TextDisabled,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
                     )
                 }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.settings_remove_jailbreak_note),
+                    color = DopamineColors.TextSecondary,
+                    fontSize = 12.sp,
+                )
             }
         }
     }
@@ -304,19 +305,67 @@ fun SettingsScreen(
  * The exploits that ship with Dopamine, taken from the framework bundles in
  * `Application/Dopamine/Exploits`. RootHide is intentionally not among them.
  *
- * The platform column is what each exploit targets on iOS; it is shown because the iOS screen shows
- * the same kind of information, not because it applies to the device this runs on.
+ * No iOS version ranges: this app runs on Android, so "iOS 15.0 - 15.8" next to each name would be
+ * information about a device the user is not holding. The first entry is the one Dopamine picks by
+ * default (highest priority that is supported), and the UI marks it as recommended.
  */
-private enum class KernelExploit(val displayName: String, val platforms: String) {
-    ClearSword("ClearSword", "iOS 15.0 - 15.8"),
-    DarkSword("DarkSword", "iOS 16.0 - 16.6"),
-    Titan("Titan", "iOS 15.0 - 15.8"),
-    BadRecovery("badRecovery", "iOS 15.0 - 15.8"),
-    DmaFail("dmaFail", "iOS 15.0 - 15.4"),
-    Kfd("kfd", "iOS 16.0 - 16.6"),
-    Momentarius("momentarius", "iOS 16.0 - 16.6"),
-    MulticastBytecopy("multicast_bytecopy", "iOS 14.0 - 14.8"),
-    WeightBufs("weightBufs", "iOS 15.0 - 15.8"),
+private val KernelExploits = listOf(
+    "ClearSword",
+    "DarkSword",
+    "Titan",
+    "badRecovery",
+    "dmaFail",
+    "kfd",
+    "momentarius",
+    "multicast_bytecopy",
+    "weightBufs",
+)
+
+/**
+ * The same list, public, because both the picker and the settings row that names the current
+ * choice have to agree on what a valid selection is - and the default selection is the first
+ * entry, which is the recommended one.
+ */
+val Exploits: List<String> = KernelExploits
+
+/**
+ * The kernel-exploit picker, opened from Settings.
+ *
+ * On iOS this is `DOPSExploitListItemsController`, a plain list where the current selection is
+ * ticked and the default carries a "(Recommended)" suffix. Same idea here.
+ */
+@Composable
+fun ExploitPickerScreen(
+    selected: String,
+    onSelect: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    DetailScaffold(title = stringResource(R.string.settings_kernel_exploit), onBack = onBack) {
+        SettingsCard {
+            KernelExploits.forEachIndexed { index, name ->
+                if (index > 0) CardLine()
+                ChoiceRow(
+                    title = if (index == 0) {
+                        "$name (${stringResource(R.string.settings_recommended)})"
+                    } else {
+                        name
+                    },
+                    selected = name == selected,
+                    onClick = { onSelect(name) },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Column(Modifier.padding(horizontal = 4.dp)) {
+            Text(
+                text = stringResource(R.string.settings_exploit_note),
+                color = DopamineColors.TextSecondary,
+                fontSize = 12.sp,
+            )
+        }
+    }
 }
 
 /**
@@ -335,18 +384,20 @@ fun AboutScreen(
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             /*
-             * The real app icon, not the drawn mark. About is where the app states what it is, so
-             * it shows the same artwork the launcher does - and that artwork is a PNG here rather
-             * than a vector, because the vector icon rendered as a white block.
+             * The wordmark again, not the launcher icon. This row sits directly above the
+             * "Dopamine" title text, and on iOS the About screen shows the same header artwork,
+             * so a square icon here would read as two different products stacked.
              */
             Image(
-                painter = painterResource(R.mipmap.ic_launcher),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(14.dp)),
+                painter = painterResource(R.drawable.dopamine_wordmark),
+                contentDescription = "Dopamine",
+                modifier = Modifier.height(34.dp),
+                contentScale = ContentScale.FillHeight,
             )
-            Spacer(Modifier.width(16.dp))
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text(
                     text = "Dopamine",
@@ -496,18 +547,19 @@ private fun ChoiceRow(
     selected: Boolean,
     onClick: () -> Unit,
     value: String? = null,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             text = title,
-            color = DopamineColors.TextPrimary,
+            color = if (enabled) DopamineColors.TextPrimary else DopamineColors.TextDisabled,
             fontSize = 15.sp,
         )
         // A read-only row (value != null) shows its current setting instead of a tick.

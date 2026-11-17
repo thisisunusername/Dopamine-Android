@@ -28,6 +28,7 @@ object JailbreakState {
     private const val KEY_DETAILED_LOG = "detailed_log"
     private const val KEY_DAEMON_PID = "daemon_pid"
     private const val KEY_HIDDEN = "jailbreak_hidden"
+    private const val KEY_EXPLOIT = "kernel_exploit"
 
     fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -107,5 +108,18 @@ object JailbreakState {
 
     fun setHidden(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_HIDDEN, value).apply()
+    }
+
+    /**
+     * The kernel exploit picked in Settings.
+     *
+     * Null means "never chosen", and the caller falls back to the recommended entry. Stored rather
+     * than kept in memory so the choice does not silently revert every time the app is reopened -
+     * which is what the iOS list does too, through its own preferences domain.
+     */
+    fun selectedExploit(context: Context): String? = prefs(context).getString(KEY_EXPLOIT, null)
+
+    fun setSelectedExploit(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_EXPLOIT, value).apply()
     }
 }
