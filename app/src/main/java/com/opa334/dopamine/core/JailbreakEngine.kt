@@ -352,9 +352,9 @@ object JailbreakEngine {
     // An app cannot restart the launcher, and there is no SpringBoard to reload on Android.
     // Sending ACTION_CONFIGURATION_CHANGED to the launcher package, as an earlier revision did,
     // returns "sent" while guaranteeing nothing — it would be a claim this app cannot back up.
-    // The UI instead shows a black screen for eight seconds and calls finish(), which is the
-    // observable part of a respring: everything disappears, and the app comes back on
-    // "Jailbroken" because the daemon outlived it.
+    // The UI instead shows a black screen for a few seconds and returns to the main screen, which
+    // is the observable part of a respring. It deliberately does not close the app: an earlier
+    // revision did, and the app disappearing looked exactly like a crash.
 
     /**
      * "Restart userspace": kill the daemon, wait, bring it back.

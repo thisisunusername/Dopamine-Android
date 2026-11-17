@@ -96,51 +96,13 @@ fun DopamineHeader(
 }
 
 /**
- * The Dopamine mark: the white ring from the app icon, not a solid disc.
+ * The Dopamine mark used to be drawn here by hand: an annulus with a notch, from geometry measured
+ * off Icon-60@3x.png. It has been removed rather than left unused, because a hand-drawn stand-in is
+ * exactly what kept rendering as a white blob next to the original artwork.
  *
- * This used to be a filled circle, which drew as a plain white blob everywhere it
- * appeared - the header, the restart-userspace screen and the About screen all
- * looked like a white square with nothing in it. The actual mark, measured from
- * Icon-60@3x.png, is an annulus: centre (89.5, 89.5) in a 180-unit canvas, outer
- * radius 60, inner radius 34, with a notch spanning roughly 322-338 degrees
- * clockwise from straight up.
- *
- * Drawn rather than shipped as a bitmap so it stays sharp at every size the app
- * uses it at, and so the notch geometry lives in one place.
+ * Everything that shows the mark now uses the real bitmap - `@mipmap/ic_launcher`, generated from
+ * Icon-64@3x.png - so the app icon, the post-run sequence and the launcher can never drift apart.
  */
-@Composable
-fun DopamineMark(
-    modifier: Modifier = Modifier,
-    color: Color = DopamineColors.TextPrimary,
-    size: Dp = 40.dp,
-) {
-    Canvas(modifier = modifier.size(size)) {
-        val unit = this.size.minDimension / 180f
-        val centre = Offset(this.size.width / 2f, this.size.height / 2f)
-        val outer = 60f * unit
-        val inner = 34f * unit
-
-        // 360 degrees minus the notch, drawn as a stroked arc of the ring's mid radius.
-        val mid = (outer + inner) / 2f
-        val stroke = outer - inner
-        val gapStart = NOTCH_FROM
-        val gapSweep = NOTCH_TO - NOTCH_FROM
-
-        drawArc(
-            color = color,
-            startAngle = gapStart + gapSweep,
-            sweepAngle = 360f - gapSweep,
-            useCenter = false,
-            topLeft = Offset(centre.x - mid, centre.y - mid),
-            size = Size(mid * 2f, mid * 2f),
-            style = Stroke(width = stroke),
-        )
-    }
-}
-
-/** Notch bounds in degrees clockwise from straight up, from the source artwork. */
-private const val NOTCH_FROM = 322f
-private const val NOTCH_TO = 338f
 
 /**
  * The Apple silhouette shown once, slowly, after the logo blinks.
@@ -188,12 +150,15 @@ fun AppleGlyph(
 }
 
 /**
- * The black-out sequence played when a run finishes.
+ * The sequence played when a run finishes.
  *
- * Order is fixed by what the user sees on iOS: screen goes black, the mark blinks twice, then a
- * single slow Apple glyph, then the app closes itself. Each phase has its own duration so the
- * Apple step can be noticeably slower, which is what makes the sequence feel deliberate rather
- * than a generic fade.
+ * Order is fixed by what the user sees on iOS: screen goes black, the artwork blinks twice, then a
+ * single slow Apple glyph. Each phase has its own duration so the Apple step can be noticeably
+ * slower, which is what makes the sequence feel deliberate rather than a generic fade.
+ *
+ * Unlike iOS, it then hands control back instead of closing the app: on iOS the process is really
+ * replaced and SpringBoard returns, but on Android closing the app is the whole visible result and
+ * it is indistinguishable from a crash.
  */
 @Composable
 fun BlackoutSequence(
@@ -229,9 +194,17 @@ fun BlackoutSequence(
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {
-        DopamineMark(
-            modifier = Modifier.graphicsLayer { alpha = markAlpha.value },
-            size = 128.dp,
+        /*
+         * The real icon artwork, as a PNG: `@mipmap/ic_launcher` would resolve to the
+         * adaptive-icon XML on API 26+ and painterResource() throws on that. The xxxhdpi bitmap
+         * is the same artwork at 192 px.
+         */
+        Image(
+            painter = painterResource(R.drawable.dopamine_mark),
+            contentDescription = "Dopamine",
+            modifier = Modifier
+                .size(128.dp)
+                .graphicsLayer { alpha = markAlpha.value },
         )
         AppleGlyph(
             modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },

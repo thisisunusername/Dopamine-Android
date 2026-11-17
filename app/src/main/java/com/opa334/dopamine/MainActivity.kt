@@ -47,8 +47,11 @@ import kotlinx.coroutines.launch
  * The single activity.
  *
  * Everything is one activity and a small set of enums rather than a navigation library: there are
- * four destinations, none of them needs a back stack of its own, and the blackout sequence has to
- * be able to finish the activity outright.
+ * five destinations, none of them needs a back stack of its own.
+ *
+ * Nothing here ever finishes the activity on its own. An earlier revision did - the blackout
+ * sequence called finish() to imitate a respring - and the result was that tapping "Jailbreak"
+ * made the app vanish, which is indistinguishable from a crash.
  */
 class MainActivity : ComponentActivity() {
 
@@ -57,7 +60,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             DopamineTheme {
-                DopamineApp(onFinish = { finish() })
+                DopamineApp()
             }
         }
     }
@@ -70,7 +73,7 @@ private enum class Overlay { None, Wizard, Blackout, Userspace, SpringBoard }
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-private fun DopamineApp(onFinish: () -> Unit) {
+private fun DopamineApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -183,18 +186,20 @@ private fun DopamineApp(onFinish: () -> Unit) {
                     },
                     onRestartSpringBoard = {
                         /*
-                         * Eight seconds of black, then the app closes itself.
+                         * Same mistake as the blackout sequence had: this used to wait eight
+                         * seconds and then close the activity.
                          *
-                         * An app cannot restart the launcher, so the closest honest behaviour is
-                         * to disappear the way a respring makes everything disappear: the screen
-                         * goes black and the app is gone. It is not reopened automatically — the
-                         * user taps the icon, the daemon is still alive, and the app comes back
-                         * on "Jailbroken", which is the observable result a respring would have.
+                         * "Restart SpringBoard" cannot be honoured on Android - there is no
+                         * SpringBoard, and an app cannot restart the launcher. Pretending to
+                         * disappear was worse than doing nothing, because the app closing itself
+                         * is indistinguishable from a crash. The black screen is kept (it is the
+                         * part that reads as a respring) and the app comes back on its own.
                          */
                         scope.launch {
                             overlay = Overlay.SpringBoard
-                            delay(8_000L)
-                            onFinish()
+                            delay(3_000L)
+                            overlay = Overlay.None
+                            refreshState()
                         }
                     },
                     onRestartUserspace = {
@@ -299,7 +304,25 @@ private fun DopamineApp(onFinish: () -> Unit) {
         }
 
         if (overlay == Overlay.Blackout) {
-            BlackoutSequence(onFinished = { onFinish() })
+            /*
+             * The blink is the "respring" moment, but the app must survive it.
+             *
+             * This used to call onFinish() and close the activity, copying what iOS does - where
+             * the process really is replaced and SpringBoard comes back. On Android there is no
+             * SpringBoard to come back, so the only visible effect was that tapping "Jailbreak"
+             * made the app disappear a few seconds later, which reads exactly like a crash and is
+             * what got reported as one. Nothing crashed: no FATAL EXCEPTION is ever logged, the
+             * activity is simply finished by its own code.
+             *
+             * The screen now goes black, blinks, and returns to the main screen in its jailbroken
+             * state. That is the observable outcome the user actually wants from the button.
+             */
+            BlackoutSequence(
+                onFinished = {
+                    overlay = Overlay.None
+                    refreshState()
+                },
+            )
         }
 
         if (overlay == Overlay.Userspace) {

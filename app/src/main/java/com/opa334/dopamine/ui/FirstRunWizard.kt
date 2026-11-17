@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -76,13 +77,19 @@ fun FirstRunWizard(
         ) {
             Spacer(Modifier.height(64.dp))
 
-            // The app's own icon, so the sheet looks like it belongs to the app the user just tapped.
+            // The wordmark, not R.mipmap.ic_launcher.
+            //
+            // ic_launcher is an <adaptive-icon> XML on API 26+ (mipmap-anydpi-v26), and
+            // painterResource() only understands VectorDrawables and real bitmaps - it throws
+            // "Only VectorDrawables and rasterized asset types are supported" for anything else.
+            // That exception fired the moment this sheet opened, which is what made tapping
+            // "Jailbreak" crash on a first run. drawable-nodpi/dopamine_wordmark.png is a plain
+            // PNG, so it is safe here.
             Image(
-                painter = painterResource(R.mipmap.ic_launcher),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp)),
+                painter = painterResource(R.drawable.dopamine_wordmark),
+                contentDescription = "Dopamine",
+                modifier = Modifier.height(34.dp),
+                contentScale = ContentScale.FillHeight,
             )
 
             Spacer(Modifier.height(18.dp))
