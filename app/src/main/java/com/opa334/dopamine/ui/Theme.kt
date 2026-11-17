@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.asImageBitmap
 import com.opa334.dopamine.R
 
 /**
@@ -97,8 +98,9 @@ fun DopamineTheme(content: @Composable () -> Unit) {
 @Composable
 fun ThemeBackground(modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    // Decoded once and remembered; asImageBitmap() is a zero-copy view over the same pixels.
     val bitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.bg_green)
+        BitmapFactory.decodeResource(context.resources, R.drawable.bg_green)?.asImageBitmap()
     }
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
         if (bitmap != null) {
