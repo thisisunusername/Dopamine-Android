@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        A black window background, not the Material default.
+
+        Compose only takes over after the first frame, and on a slow cold start the window is visible
+        before that; a light background here produces a white flash on an app that is otherwise black.
+    -->
+    <style name="Theme.Dopamine" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

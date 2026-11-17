@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default locale is English: an English device then needs no extra resource file, and every other
+  locale falls back to it rather than to Chinese. `values-zh/strings.xml` carries the Chinese text.
+-->
+<resources>
+    <string name="app_name">Dopamine</string>
+
+    <!-- Subtitle under the wordmark. Deliberately over-precise, matching the iOS app's joke. -->
+    <string name="subtitle_version">Android 9.0 - 17.0 (arm64)</string>
+    <string name="subtitle_credits">by opa334, évelyne (ElleKit)</string>
+
+    <!-- Action card -->
+    <string name="menu_settings">Settings</string>
+    <string name="menu_restart_springboard">Restart SpringBoard</string>
+    <string name="menu_restart_userspace">Restart Userspace</string>
+    <string name="menu_about">About</string>
+
+    <!-- Footer -->
+    <string name="footer_package_manager">Package manager: %1$s</string>
+
+    <!-- Primary button and its secondary action -->
+    <string name="action_jailbreak">Jailbreak</string>
+    <string name="action_jailbreaking">Jailbreaking</string>
+    <string name="action_jailbroken">Jailbroken</string>
+    <string name="menu_remove_jailbreak">Remove Jailbreak</string>
+
+    <!-- Exploit steps -->
+    <string name="step_download_kernel">Downloading Kernel…</string>
+    <string name="step_find_address">Finding Addresses</string>
+    <string name="step_exploit_kernel">Exploiting Kernel (ClearSword)</string>
+    <string name="step_prepare_environment">Preparing Environment</string>
+    <string name="step_install_package_manager">Installing Package Manager</string>
+    <string name="step_start_daemon">Starting Daemon</string>
+    <string name="step_package_manager_unset">not selected</string>
+    <string name="result_daemon_failed">The daemon did not start</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_jailbreak">Jailbreak</string>
+    <string name="settings_detailed_log">Detailed Log</string>
+    <string name="settings_detailed_log_subtitle">Show kernel, offsets and full paths in the log</string>
+    <string name="settings_section_package_manager">Package Manager</string>
+    <string name="settings_section_sudo">Sudo Password</string>
+    <string name="settings_password">Password</string>
+    <string name="settings_sudo_note">Stored on this device only, used to imitate the sudo prompt of a jailbroken environment.</string>
+
+    <!-- About -->
+    <string name="about_title">About</string>
+    <string name="about_subtitle">Android UI recreation</string>
+    <string name="about_section_device">Device</string>
+    <string name="about_model">Model</string>
+    <string name="about_system">System</string>
+    <string name="about_kernel">Kernel</string>
+    <string name="about_arch">Architecture</string>
+    <string name="about_unknown">unknown</string>
+    <string name="about_section_note">Notice</string>
+    <string name="about_note">This is a recreation of the iOS Dopamine interface. It contains no real kernel exploit and does not gain root access. The steps in the log do read real device information and do start a background process, but no privilege is escalated.</string>
+    <string name="about_section_credits">Credits</string>
+    <string name="about_original_authors">Original authors</string>
+    <string name="about_ui_reference">UI reference</string>
+
+    <!-- First-run wizard -->
+    <string name="wizard_choose_package_manager">Choose a Package Manager</string>
+    <string name="wizard_set_sudo">Set a Sudo Password</string>
+    <string name="wizard_choose_desc">The package manager used to install add-ons after the jailbreak. You can change it later in Settings.</string>
+    <string name="wizard_sudo_desc">sudo in the jailbroken environment checks this password. It is stored on this device only.</string>
+    <string name="wizard_password_hint">Leave empty to use the default password, alpine.</string>
+    <string name="wizard_continue">Continue</string>
+    <string name="wizard_start">Start</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_back">Back</string>
+    <string name="cd_selected">Selected</string>
+</resources>

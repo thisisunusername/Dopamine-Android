@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chinese. The English strings live in `values/strings.xml` and are the fallback. -->
+<resources>
+    <string name="subtitle_credits">by opa334, évelyne (ElleKit)</string>
+
+    <string name="menu_settings">设置</string>
+    <string name="menu_restart_springboard">重启 SpringBoard</string>
+    <string name="menu_restart_userspace">重启用户空间</string>
+    <string name="menu_about">关于</string>
+
+    <string name="footer_package_manager">包管理器：%1$s</string>
+
+    <string name="action_jailbreak">越狱</string>
+    <string name="action_jailbreaking">正在越狱</string>
+    <string name="action_jailbroken">已越狱</string>
+    <string name="menu_remove_jailbreak">移除越狱</string>
+
+    <string name="step_download_kernel">下载内核…</string>
+    <string name="step_find_address">查找地址</string>
+    <string name="step_exploit_kernel">正在利用内核 (ClearSword)</string>
+    <string name="step_prepare_environment">准备环境</string>
+    <string name="step_install_package_manager">安装包管理器</string>
+    <string name="step_start_daemon">启动守护进程</string>
+    <string name="step_package_manager_unset">未选择</string>
+    <string name="result_daemon_failed">守护进程没有启动</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_section_jailbreak">越狱</string>
+    <string name="settings_detailed_log">详细日志</string>
+    <string name="settings_detailed_log_subtitle">在日志中显示内核、偏移和完整路径</string>
+    <string name="settings_section_package_manager">包管理器</string>
+    <string name="settings_section_sudo">sudo 密码</string>
+    <string name="settings_password">密码</string>
+    <string name="settings_sudo_note">仅保存在本机，用于模拟越狱环境中的 sudo 提示。</string>
+
+    <string name="about_title">关于</string>
+    <string name="about_subtitle">Android 版界面还原</string>
+    <string name="about_section_device">设备</string>
+    <string name="about_model">型号</string>
+    <string name="about_system">系统</string>
+    <string name="about_kernel">内核</string>
+    <string name="about_arch">架构</string>
+    <string name="about_unknown">未知</string>
+    <string name="about_section_note">说明</string>
+    <string name="about_note">这是对 iOS 版 Dopamine 界面的还原，不包含真正的内核漏洞利用，不会获取 root 权限。日志中的步骤会真实读取设备信息并启动一个后台进程，但不会提权。</string>
+    <string name="about_section_credits">致谢</string>
+    <string name="about_original_authors">原作者</string>
+    <string name="about_ui_reference">界面参考</string>
+
+    <string name="wizard_choose_package_manager">选择包管理器</string>
+    <string name="wizard_set_sudo">设置 sudo 密码</string>
+    <string name="wizard_choose_desc">越狱后用来安装插件的包管理器，之后可以在设置里更改。</string>
+    <string name="wizard_sudo_desc">越狱环境中的 sudo 会验证这个密码。只保存在本机。</string>
+    <string name="wizard_password_hint">留空则使用默认密码 alpine。</string>
+    <string name="wizard_continue">继续</string>
+    <string name="wizard_start">开始</string>
+
+    <string name="cd_back">返回</string>
+    <string name="cd_selected">已选择</string>
+</resources>
