@@ -31,15 +31,27 @@ jobs:
 
       - name: Accept licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Build signed release APK
+        env:
+          DOPAMINE_STORE_PASSWORD: ${{ secrets.DOPAMINE_STORE_PASSWORD }}
+          DOPAMINE_KEY_PASSWORD: ${{ secrets.DOPAMINE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Collect APK
         run: |
           mkdir -p out
-          find app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
+          find app/build/outputs/apk/release -name '*.apk' -exec cp {} out/ \;
           ls -lh out
+      - name: Verify the APK is signed with the release key
+        run: |
+          APK=$(ls out/*.apk | head -1)
+          echo "APK: $APK"
+          # apksigner is part of build-tools; fail loudly rather than publishing an unsigned or
+          # debug-signed APK if the keystore secret is missing.
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK" || {
+            echo "::error::$APK is not signed correctly"; exit 1; }
+
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

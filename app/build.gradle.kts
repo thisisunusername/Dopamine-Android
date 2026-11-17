@@ -16,11 +16,44 @@ android {
         versionName = "1.0"
     }
 
+    /*
+     * A real signing key, not the debug key.
+     *
+     * Shipping a release signed with the debug key means the signature is the well-known "android"
+     * one, so anyone can rebuild this app and have it install over an existing copy - the update
+     * would be accepted as the same publisher. The keystore here is generated once and reused, so
+     * updates keep the same signature, which is what Android requires to install over a previous
+     * version without uninstalling.
+     *
+     * The password is read from the environment (local builds) or from a Gradle property seeded by
+     * CI secrets, never from this file: the repository is public.
+     */
+    signingConfigs {
+        create("release") {
+            storeFile = file("signing/dopamine-release.jks")
+            storePassword = System.getenv("DOPAMINE_STORE_PASSWORD")
+                ?: (project.findProperty("dopamineStorePassword") as String?)
+                ?: ""
+            keyAlias = "dopamine"
+            keyPassword = System.getenv("DOPAMINE_KEY_PASSWORD")
+                ?: (project.findProperty("dopamineKeyPassword") as String?)
+                ?: ""
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so a self-built APK is installable without a keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            /*
+             * Only sign when a password is actually available. Without this fallback a plain
+             * `./gradlew assembleDebug` on a machine with no keystore password would still try to
+             * configure the release config, and an empty password makes the APK unsigned rather
+             * than merely unsigned-in-a-way-nobody-notices.
+             */
+            signingConfig = if (signingConfigs.getByName("release").storePassword.isNullOrEmpty()) {
+                signingConfigs.getByName("debug")
+            } else {
+                signingConfigs.getByName("release")
+            }
         }
     }
 
