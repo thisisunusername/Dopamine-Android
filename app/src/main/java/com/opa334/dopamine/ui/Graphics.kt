@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -66,11 +67,17 @@ fun DopamineHeader(
 }
 
 /**
- * The Dopamine mark: a solid disc.
+ * The Dopamine mark: the white ring from the app icon, not a solid disc.
  *
- * The iOS asset (DopamineLogo.pdf) renders as a filled circle, so this is drawn rather than
- * shipped as a bitmap — it stays sharp at every size the app uses it at, and the blur/blackout
- * sequences need it at several different sizes.
+ * This used to be a filled circle, which drew as a plain white blob everywhere it
+ * appeared - the header, the restart-userspace screen and the About screen all
+ * looked like a white square with nothing in it. The actual mark, measured from
+ * Icon-60@3x.png, is an annulus: centre (89.5, 89.5) in a 180-unit canvas, outer
+ * radius 60, inner radius 34, with a notch spanning roughly 322-338 degrees
+ * clockwise from straight up.
+ *
+ * Drawn rather than shipped as a bitmap so it stays sharp at every size the app
+ * uses it at, and so the notch geometry lives in one place.
  */
 @Composable
 fun DopamineMark(
@@ -79,9 +86,32 @@ fun DopamineMark(
     size: Dp = 40.dp,
 ) {
     Canvas(modifier = modifier.size(size)) {
-        drawCircle(color = color, radius = this.size.minDimension / 2f)
+        val unit = this.size.minDimension / 180f
+        val centre = Offset(this.size.width / 2f, this.size.height / 2f)
+        val outer = 60f * unit
+        val inner = 34f * unit
+
+        // 360 degrees minus the notch, drawn as a stroked arc of the ring's mid radius.
+        val mid = (outer + inner) / 2f
+        val stroke = outer - inner
+        val gapStart = NOTCH_FROM
+        val gapSweep = NOTCH_TO - NOTCH_FROM
+
+        drawArc(
+            color = color,
+            startAngle = gapStart + gapSweep,
+            sweepAngle = 360f - gapSweep,
+            useCenter = false,
+            topLeft = Offset(centre.x - mid, centre.y - mid),
+            size = Size(mid * 2f, mid * 2f),
+            style = Stroke(width = stroke),
+        )
     }
 }
+
+/** Notch bounds in degrees clockwise from straight up, from the source artwork. */
+private const val NOTCH_FROM = 322f
+private const val NOTCH_TO = 338f
 
 /**
  * The Apple silhouette shown once, slowly, after the logo blinks.
@@ -212,6 +242,12 @@ fun UserspaceBlink(
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {
+        /*
+         * The real mark, in white, at a size that suits a full-screen blink. DopamineMark draws the
+         * ring from the app icon (outer radius 60, inner 34, notch near 1 o'clock), so this is the
+         * Dopamine logo rather than a generic shape. The Apple glyph belongs to the blackout
+         * sequence - a userspace restart must not show it, because nothing is rebooting.
+         */
         DopamineMark(
             modifier = Modifier.graphicsLayer { alpha = markAlpha.value },
             size = 120.dp,

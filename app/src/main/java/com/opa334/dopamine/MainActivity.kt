@@ -195,10 +195,6 @@ private fun DopamineApp(onFinish: () -> Unit) {
                     },
                     onSettings = { screen = Screen.Settings },
                     onAbout = { screen = Screen.About },
-                    onRemoveJailbreak = {
-                        JailbreakEngine.removeJailbreak(context)
-                        refreshState()
-                    },
                 )
 
                 Screen.Settings -> SettingsScreen(
@@ -214,6 +210,42 @@ private fun DopamineApp(onFinish: () -> Unit) {
                     },
                     sudoPassword = JailbreakState.sudoPassword(context),
                     onSudoPasswordChange = { JailbreakState.setSudoPassword(context, it) },
+                    jailbroken = jailbroken,
+                    hidden = JailbreakState.isHidden(context),
+                    onToggleHidden = {
+                        /*
+                         * Hide and unhide change the daemon, not just a flag.
+                         *
+                         * Hiding stops it: "hidden" has to mean the process is gone, otherwise the
+                         * device is still jailbroken while the UI says it is not. Unhiding starts a
+                         * new daemon through the same call the real run uses, and only reports
+                         * success if that process is actually alive afterwards.
+                         */
+                        scope.launch {
+                            if (JailbreakState.isHidden(context)) {
+                                val ok = JailbreakEngine.restartUserspace(context)
+                                JailbreakState.setHidden(context, !ok)
+                                refreshState()
+                            } else {
+                                JailbreakEngine.removeJailbreak(context)
+                                // removeJailbreak clears the "ever jailed" flag; hiding is not the
+                                // same as removing, so the history is kept.
+                                JailbreakState.markEverJailbroken(context)
+                                JailbreakState.setHidden(context, true)
+                                refreshState()
+                            }
+                        }
+                    },
+                    onRemoveJailbreak = {
+                        scope.launch {
+                            JailbreakEngine.removeJailbreak(context)
+                            JailbreakState.setHidden(context, false)
+                            refreshState()
+                            // Removing the jailbreak takes everything with it, so the settings
+                            // screen has nothing left to act on.
+                            screen = Screen.Main
+                        }
+                    },
                     onBack = { screen = Screen.Main },
                 )
 

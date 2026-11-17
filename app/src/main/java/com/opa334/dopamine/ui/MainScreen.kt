@@ -91,7 +91,6 @@ fun MainScreen(
     onRestartUserspace: () -> Unit,
     onSettings: () -> Unit,
     onAbout: () -> Unit,
-    onRemoveJailbreak: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
         ThemeBackground()
@@ -155,9 +154,10 @@ fun MainScreen(
                 },
                 jailbroken = state.jailbroken,
                 busy = state.busy,
-                enabled = !state.busy,
+                // Once the device is jailbroken the row has nothing left to do, so it goes grey
+                // and stops accepting taps rather than offering a second run that would fail.
+                enabled = !state.busy && !state.jailbroken,
                 onClick = onJailbreak,
-                onRemove = onRemoveJailbreak,
             )
 
             // The iOS layout reserves 60 pt for the button; the remaining space keeps it clear of
@@ -247,69 +247,45 @@ private fun JailbreakButton(
     busy: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
-    onRemove: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
 
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .clip(RoundedCornerShape(CardCorner))
-                .alpha(if (enabled) 1f else 0.6f)
-                .background(DopamineColors.Menu)
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    enabled = enabled,
-                    onClick = onClick,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            if (busy) {
-                ProgressRing(size = 18.dp)
-                Spacer(Modifier.width(10.dp))
-            } else {
-                Icon(
-                    imageVector = if (jailbroken) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                    contentDescription = null,
-                    tint = DopamineColors.TextPrimary,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(10.dp))
-            }
-            Text(
-                text = title,
-                color = DopamineColors.TextPrimary,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.widthIn(max = 260.dp),
-                textAlign = TextAlign.Center,
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .clip(RoundedCornerShape(CardCorner))
+            .alpha(if (enabled) 1f else 0.6f)
+            .background(DopamineColors.Menu)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (busy) {
+            ProgressRing(size = 18.dp)
+            Spacer(Modifier.width(10.dp))
+        } else {
+            Icon(
+                imageVector = if (jailbroken) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                contentDescription = null,
+                tint = if (enabled) DopamineColors.TextPrimary else DopamineColors.TextDisabled,
+                modifier = Modifier.size(18.dp),
             )
+            Spacer(Modifier.width(10.dp))
         }
-
-        // "Remove jailbreak" only exists once there is something to remove.
-        if (jailbroken) {
-            Spacer(Modifier.height(12.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .clip(RoundedCornerShape(CardCorner))
-                    .clickable(onClick = onRemove),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(R.string.menu_remove_jailbreak),
-                    color = DopamineColors.Danger,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
+        Text(
+            text = title,
+            color = if (enabled) DopamineColors.TextPrimary else DopamineColors.TextDisabled,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.widthIn(max = 260.dp),
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

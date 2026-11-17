@@ -27,6 +27,7 @@ object JailbreakState {
     private const val KEY_SUDO_PASSWORD = "sudo_password"
     private const val KEY_DETAILED_LOG = "detailed_log"
     private const val KEY_DAEMON_PID = "daemon_pid"
+    private const val KEY_HIDDEN = "jailbreak_hidden"
 
     fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -92,5 +93,19 @@ object JailbreakState {
 
     fun setDetailedLog(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_DETAILED_LOG, value).apply()
+    }
+
+    /**
+     * Whether "Hide Jailbreak" has been used.
+     *
+     * This is a real state change, not a label. Hiding stops the daemon, because the daemon is the
+     * thing that makes the device jailbroken - leaving it running while the UI claims the jailbreak
+     * is hidden would be a lie, and it is the exact kind of lie this rebuild exists to avoid.
+     * Unhiding starts a fresh one through the same path a normal jailbreak uses.
+     */
+    fun isHidden(context: Context): Boolean = prefs(context).getBoolean(KEY_HIDDEN, false)
+
+    fun setHidden(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_HIDDEN, value).apply()
     }
 }

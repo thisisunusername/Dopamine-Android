@@ -2,6 +2,7 @@ package com.opa334.dopamine.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -74,7 +76,14 @@ fun FirstRunWizard(
         ) {
             Spacer(Modifier.height(64.dp))
 
-            DopamineMark(size = 40.dp)
+            // The app's own icon, so the sheet looks like it belongs to the app the user just tapped.
+            Image(
+                painter = painterResource(R.mipmap.ic_launcher),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+            )
 
             Spacer(Modifier.height(18.dp))
 
@@ -111,7 +120,6 @@ fun FirstRunWizard(
                     listOf(
                         "sileo" to "Sileo",
                         "zebra" to "Zebra",
-                        "installer" to "Installer",
                     ).forEach { (key, label) ->
                         Row(
                             modifier = Modifier

@@ -27,11 +27,36 @@ the ones in `DOMainViewController.m` and `DOGlobalAppearance.h`.
 | Header | mark at 40 dp, then 2 dp, then two 14 sp lines |
 | Primary text | white 100%; secondary white 60% |
 | Switch tint | `rgb(71, 169, 135)` |
+| Icon | vertical gradient `#0A445F` → `#1DB482`, white ring (r 34–60 of 180, notch at 1 o'clock) |
 
-The default theme is **Dopamine** (green). The iOS app ships five (`Dopamine`, `ElleKit`,
+The default theme is **Dopamine** (green). The iOS app ships six (`Dopamine`, `ElleKit`,
 `Deep Blue Sky`, `Blood Sky`, `Desert Dusk`, `Midnight Neon`); only the default is included
-here, because the other four are the same layout with a different photograph and overlay
-colour.
+here, because the others are the same layout with a different photograph and overlay colour.
+
+### The icon
+
+The launcher icon is rasterised PNG, not a vector, and that is deliberate. The background is a
+**vertical** gradient — measured from `Icon-60@3x.png`, whose top edge is a single colour, whose
+bottom edge is a single colour, and whose left and right midpoints are identical. An earlier
+version drew it as a diagonal gradient inside an `aapt:attr` block in a vector path, and on
+device the ring appeared while the gradient did not, leaving a white square. The ring itself is
+an annulus centred at (89.5, 89.5) in a 180-unit canvas, outer radius 60, inner radius 34, with
+a notch spanning roughly 322–338° clockwise from straight up.
+
+## Settings
+
+| Section | Behaviour |
+|---|---|
+| Exploits | The kernel exploits Dopamine actually ships, minus RootHide. Read-only: it reports names and iOS version ranges, and says in the card that nothing here runs. |
+| Jailbreak | The detailed-log switch, which changes what the run really reports. |
+| Actions | Hide / Unhide Jailbreak, with the original iOS paragraph underneath. |
+| Package Manager | Sileo or Zebra. Installer is deliberately absent. |
+| Sudo Password | Stored locally, used only to imitate the sudo prompt. |
+| Remove Jailbreak | Moved here from the main screen; only shown while a jailbreak exists. |
+
+**Hide Jailbreak is a state change, not a label.** Hiding stops the daemon — leaving it running
+while the UI claims the jailbreak is hidden would be a lie. Unhiding starts a new daemon through
+the same path a normal run uses and only reports success if the process is alive afterwards.
 
 ## What is real
 
@@ -48,7 +73,12 @@ Being straight about this matters more than the illusion:
   it, a new one is started, and the replacement's liveness is verified before the UI reports
   success.
 - **The "Detailed log" switch is not decoration.** Off: one word per step. On: kernel release,
-  API level, ABI, staging path, resolved shell, uid, daemon pid and heartbeat path.
+  API level, ABI, staging path, resolved shell, uid, daemon pid and heartbeat path — and, for
+  "Finding Addresses", the four `/proc` probes it actually performed (`kptr_restrict`,
+  `randomize_va_space`, `osrelease`, `kallsyms`) with whether each was absent, denied, printable
+  or zeroed, plus the kernel's real page size. On stock Android `kallsyms` reads as `zeroed`
+  because `kptr_restrict` is 2, which is the concrete reason an exploit would be needed rather
+  than an assertion about it.
 - **No privilege is escalated**, no `su` is invoked, and the About screen says so in one
   obvious place instead of repeating it everywhere.
 
@@ -101,13 +131,18 @@ The APK is built by GitHub Actions on every push to `main`; no local Android SDK
 ```
 
 Debug APKs are published as a release per run (`build-<run number>`) and attached as a
-workflow artifact.
+workflow artifact. Releases are signed with a real key, not the debug key: a debug signature is
+the well-known "android" one, so anyone could rebuild this and have Android accept it as an
+update over an installed copy. The keystore lives in `signing/`; its passwords come from the
+`DOPAMINE_STORE_PASSWORD` and `DOPAMINE_KEY_PASSWORD` repository secrets, and CI runs `apksigner
+verify` on the result so an unsigned or wrongly signed APK fails the build instead of shipping.
 
 | | |
 |---|---|
 | Language | Kotlin, Jetpack Compose (Material 3) |
-| minSdk | 28 |
-| targetSdk / compileSdk | 36 |
+| minSdk | 28 (Android 9) |
+| targetSdk | 36 |
+| compileSdk | 36 |
 | Gradle | 8.11.1, AGP 8.7.3, Kotlin 2.0.21 |
 
 ## Project layout

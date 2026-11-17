@@ -23,7 +23,6 @@
     <string name="action_jailbreak">Jailbreak</string>
     <string name="action_jailbreaking">Jailbreaking</string>
     <string name="action_jailbroken">Jailbroken</string>
-    <string name="menu_remove_jailbreak">Remove Jailbreak</string>
 
     <!-- Exploit steps -->
     <string name="step_download_kernel">Downloading Kernel…</string>
@@ -44,6 +43,25 @@
     <string name="settings_section_sudo">Sudo Password</string>
     <string name="settings_password">Password</string>
     <string name="settings_sudo_note">Stored on this device only, used to imitate the sudo prompt of a jailbroken environment.</string>
+
+    <!-- Settings: exploits. Titles and hints copied from the iOS Settings bundle. -->
+    <string name="settings_section_exploits">Exploits</string>
+    <string name="settings_kernel_exploit">Kernel Exploit</string>
+    <string name="settings_pac_bypass">PAC Bypass</string>
+    <string name="settings_ppl_bypass">PPL Bypass</string>
+    <string name="settings_none">None</string>
+    <string name="settings_exploit_note">The lists above are informational. Nothing on this screen runs a kernel exploit; see About for what is and is not implemented.</string>
+
+    <!-- Settings: hide / unhide jailbreak -->
+    <string name="settings_section_actions">Actions</string>
+    <string name="settings_hide_jailbreak">Hide Jailbreak</string>
+    <string name="settings_unhide_jailbreak">Unhide Jailbreak</string>
+    <string name="settings_hide_jailbreak_hint">\"Hide Jailbreak\" temporarily removes jailbreak-related files until the next rejailbreak</string>
+    <string name="settings_hide_jailbreak_note">\"Hide Jailbreak\" can be used to temporarily disable the jailbreak to get past certain jailbreak detection methods. It is not entirely effective and does not conceal everything, but should get the device to a similar state as to the state it is in after a reboot before rejailbreaking. It is not an adequate replacement or substitute for RootHide. No support is offered for this option as it can cause issues, use it at your own risk.</string>
+
+    <!-- Settings: remove jailbreak, moved here from the main screen -->
+    <string name="settings_remove_jailbreak">Remove Jailbreak</string>
+    <string name="settings_remove_jailbreak_note">Removes the jailbreak and everything it installed. The app closes afterwards.</string>
 
     <!-- About -->
     <string name="about_title">About</string>

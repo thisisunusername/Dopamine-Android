@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Chinese. The English strings live in `values/strings.xml` and are the fallback. -->
 <resources>
+    <string name="subtitle_version">Android 9.0 - 17.0 (arm64)</string>
     <string name="subtitle_credits">by opa334, évelyne (ElleKit)</string>
 
     <string name="menu_settings">设置</string>
@@ -13,7 +14,6 @@
     <string name="action_jailbreak">越狱</string>
     <string name="action_jailbreaking">正在越狱</string>
     <string name="action_jailbroken">已越狱</string>
-    <string name="menu_remove_jailbreak">移除越狱</string>
 
     <string name="step_download_kernel">下载内核…</string>
     <string name="step_find_address">查找地址</string>
@@ -32,6 +32,22 @@
     <string name="settings_section_sudo">sudo 密码</string>
     <string name="settings_password">密码</string>
     <string name="settings_sudo_note">仅保存在本机，用于模拟越狱环境中的 sudo 提示。</string>
+
+    <string name="settings_section_exploits">漏洞利用</string>
+    <string name="settings_kernel_exploit">内核漏洞利用</string>
+    <string name="settings_pac_bypass">PAC 绕过</string>
+    <string name="settings_ppl_bypass">PPL 绕过</string>
+    <string name="settings_none">无</string>
+    <string name="settings_exploit_note">以上列表仅供参考。此页面不会执行任何内核漏洞利用；实际实现了什么请见「关于」。</string>
+
+    <string name="settings_section_actions">操作</string>
+    <string name="settings_hide_jailbreak">隐藏越狱</string>
+    <string name="settings_unhide_jailbreak">取消隐藏越狱</string>
+    <string name="settings_hide_jailbreak_hint">「隐藏越狱」会在下次重新越狱前临时移除与越狱相关的文件</string>
+    <string name="settings_hide_jailbreak_note">「隐藏越狱」可用于临时关闭越狱，以绕过某些越狱检测手段。它并不完全有效，也无法隐藏全部痕迹，但应能让设备回到接近重新越狱之前、也就是重启之后的状态。它不能作为 RootHide 的等效替代品。此选项可能引发问题，因此不提供任何支持，请自行承担风险。</string>
+
+    <string name="settings_remove_jailbreak">移除越狱</string>
+    <string name="settings_remove_jailbreak_note">移除越狱及其安装的所有内容，之后应用会自行关闭。</string>
 
     <string name="about_title">关于</string>
     <string name="about_subtitle">Android 版界面还原</string>

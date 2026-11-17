@@ -7,9 +7,14 @@ plugins {
 android {
     namespace = "com.opa334.dopamine"
     compileSdk = 36
-
     defaultConfig {
         applicationId = "com.opa334.dopamine"
+        /*
+         * API 28 (Android 9) because that is what the UI is stated to support, and API 36
+         * (Android 16) as the target. compileSdk stays at 36: the SDK shipped with this
+         * toolchain is 36.1, and raising it further would only be needed to call newer APIs,
+         * which this app does not do.
+         */
         minSdk = 28
         targetSdk = 36
         versionCode = 1

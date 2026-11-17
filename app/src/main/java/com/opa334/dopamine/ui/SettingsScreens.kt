@@ -2,7 +2,9 @@ package com.opa334.dopamine.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -106,9 +109,64 @@ fun SettingsScreen(
     onPackageManagerChange: (String) -> Unit,
     sudoPassword: String?,
     onSudoPasswordChange: (String) -> Unit,
+    jailbroken: Boolean,
+    hidden: Boolean,
+    onToggleHidden: () -> Unit,
+    onRemoveJailbreak: () -> Unit,
     onBack: () -> Unit,
 ) {
     DetailScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
+        /*
+         * Exploits first, as on iOS. The list is the set of exploits Dopamine actually ships
+         * (Application/Dopamine/Exploits) minus RootHide, which was excluded on request. These are
+         * names, not buttons: nothing here selects or runs anything, and the note says so rather
+         * than letting the screen imply a capability.
+         */
+        SectionLabel(stringResource(R.string.settings_section_exploits))
+        SettingsCard {
+            /*
+             * The same three boxes iOS shows: the kernel exploit in use, plus the PAC and PPL
+             * bypasses where the target needs them. The picked value is the first entry of each
+             * list, which is how Dopamine chooses a default (highest priority that is supported),
+             * and "None" is used where no bypass applies.
+             */
+            ChoiceRow(
+                title = stringResource(R.string.settings_kernel_exploit),
+                value = KernelExploit.entries.first().displayName,
+                selected = true,
+                onClick = {},
+            )
+            CardLine()
+            ChoiceRow(
+                title = stringResource(R.string.settings_pac_bypass),
+                value = stringResource(R.string.settings_none),
+                selected = false,
+                onClick = {},
+            )
+            CardLine()
+            ChoiceRow(
+                title = stringResource(R.string.settings_ppl_bypass),
+                value = stringResource(R.string.settings_none),
+                selected = false,
+                onClick = {},
+            )
+            CardLine()
+            KernelExploit.entries.forEachIndexed { index, exploit ->
+                if (index > 0) CardLine()
+                InfoRow(exploit.displayName, exploit.platforms)
+            }
+            CardLine()
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text(
+                    text = stringResource(R.string.settings_exploit_note),
+                    color = DopamineColors.TextSecondary,
+                    fontSize = 12.sp,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
         SectionLabel(stringResource(R.string.settings_section_jailbreak))
         SettingsCard {
             SwitchRow(
@@ -121,12 +179,49 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(24.dp))
 
+        /*
+         * Hide / Unhide Jailbreak, mirroring the button on the iOS settings screen. The long grey
+         * paragraph under it is the original iOS hint, kept verbatim: it is the only place that
+         * explains what the option does not do, and trimming it would make the button look like a
+         * stronger guarantee than it is.
+         */
+        if (jailbroken) {
+            SectionLabel(stringResource(R.string.settings_section_actions))
+            SettingsCard {
+                ChoiceRow(
+                    title = stringResource(
+                        if (hidden) R.string.settings_unhide_jailbreak
+                        else R.string.settings_hide_jailbreak,
+                    ),
+                    selected = false,
+                    onClick = onToggleHidden,
+                )
+                CardLine()
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_hide_jailbreak_hint),
+                        color = DopamineColors.TextSecondary,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = stringResource(R.string.settings_hide_jailbreak_note),
+                        color = DopamineColors.TextSecondary,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+        }
+
         SectionLabel(stringResource(R.string.settings_section_package_manager))
         SettingsCard {
+            // Installer is deliberately absent: only the two package managers Dopamine offers for
+            // a normal bootstrap are listed, so the choice matches what the rest of the app claims.
             listOf(
                 "sileo" to "Sileo",
                 "zebra" to "Zebra",
-                "installer" to "Installer",
             ).forEachIndexed { index, (key, label) ->
                 if (index > 0) {
                     HorizontalDivider(
@@ -169,7 +264,59 @@ fun SettingsScreen(
                 )
             }
         }
+
+        /*
+         * Remove Jailbreak moved here from the main screen, and it is only offered while there is
+         * something to remove.
+         */
+        if (jailbroken) {
+            Spacer(Modifier.height(24.dp))
+            SettingsCard {
+                Column(Modifier.padding(16.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable(onClick = onRemoveJailbreak),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_remove_jailbreak),
+                            color = DopamineColors.Danger,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = stringResource(R.string.settings_remove_jailbreak_note),
+                        color = DopamineColors.TextSecondary,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        }
     }
+}
+
+/**
+ * The exploits that ship with Dopamine, taken from the framework bundles in
+ * `Application/Dopamine/Exploits`. RootHide is intentionally not among them.
+ *
+ * The platform column is what each exploit targets on iOS; it is shown because the iOS screen shows
+ * the same kind of information, not because it applies to the device this runs on.
+ */
+private enum class KernelExploit(val displayName: String, val platforms: String) {
+    ClearSword("ClearSword", "iOS 15.0 - 15.8"),
+    DarkSword("DarkSword", "iOS 16.0 - 16.6"),
+    Titan("Titan", "iOS 15.0 - 15.8"),
+    BadRecovery("badRecovery", "iOS 15.0 - 15.8"),
+    DmaFail("dmaFail", "iOS 15.0 - 15.4"),
+    Kfd("kfd", "iOS 16.0 - 16.6"),
+    Momentarius("momentarius", "iOS 16.0 - 16.6"),
+    MulticastBytecopy("multicast_bytecopy", "iOS 14.0 - 14.8"),
+    WeightBufs("weightBufs", "iOS 15.0 - 15.8"),
 }
 
 /**
@@ -187,7 +334,18 @@ fun AboutScreen(
     DetailScaffold(title = stringResource(R.string.about_title), onBack = onBack) {
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            DopamineMark(size = 56.dp, color = DopamineColors.TextPrimary)
+            /*
+             * The real app icon, not the drawn mark. About is where the app states what it is, so
+             * it shows the same artwork the launcher does - and that artwork is a PNG here rather
+             * than a vector, because the vector icon rendered as a white block.
+             */
+            Image(
+                painter = painterResource(R.mipmap.ic_launcher),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(14.dp)),
+            )
             Spacer(Modifier.width(16.dp))
             Column {
                 Text(
@@ -337,6 +495,7 @@ private fun ChoiceRow(
     title: String,
     selected: Boolean,
     onClick: () -> Unit,
+    value: String? = null,
 ) {
     Row(
         modifier = Modifier
@@ -351,7 +510,14 @@ private fun ChoiceRow(
             color = DopamineColors.TextPrimary,
             fontSize = 15.sp,
         )
-        if (selected) {
+        // A read-only row (value != null) shows its current setting instead of a tick.
+        if (value != null) {
+            Text(
+                text = value,
+                color = DopamineColors.TextSecondary,
+                fontSize = 14.sp,
+            )
+        } else if (selected) {
             Icon(
                 imageVector = Icons.Filled.Check,
                 contentDescription = stringResource(R.string.cd_selected),

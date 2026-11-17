@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon, assembled from the rasterised pieces rather than vectors.
+
+  The previous version drew the background as a <gradient> inside a vector path via
+  aapt:attr. On the device the ring appeared but the gradient did not, so the icon
+  was a white square in the launcher and inside the app itself. Rasterised
+  foreground/background layers have no such code path - what is on disk is what is
+  drawn - and the legacy mipmap-*dpi/ic_launcher.png files cover launchers that do
+  not understand adaptive icons at all.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>

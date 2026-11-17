@@ -41,6 +41,21 @@ object JailbreakEngine {
 
     private const val STAGE_DIR = "dopamine"
 
+    /**
+     * Kernel releases the shipped exploits target and the iOS span each covers.
+     *
+     * Used only to tell the user whether their kernel is one the real Dopamine would recognise. The
+     * offsets themselves live in the exploit binaries and are not reproduced here.
+     */
+    private val KERNEL_TABLE = linkedMapOf(
+        "5.10" to ("iOS 15.0" to "15.8"),
+        "5.15" to ("iOS 15.0" to "15.8"),
+        "6.0" to ("iOS 16.0" to "16.6"),
+        "6.1" to ("iOS 16.0" to "16.6"),
+        "6.2" to ("iOS 16.0" to "16.6"),
+        "6.3" to ("iOS 16.0" to "16.6"),
+    )
+
     fun steps(context: Context, detailed: Boolean): List<ExploitStep> {
         fun s(id: Int): String = context.getString(id)
 
@@ -67,12 +82,66 @@ object JailbreakEngine {
         }
 
         steps += ExploitStep(s(R.string.step_find_address), 900L) { ctx ->
-            // Offsets depend on the exact kernel build; this reports what it would need to match.
+            /*
+             * A real exploit walks the kernel's Mach-O load commands to locate its symbols, then
+             * computes slide-adjusted addresses. None of that can happen without an exploit, but
+             * the search it would perform can be described in full: which kernel release, which
+             * sysctl nodes were readable, what the KASLR slide would be applied to, and how many
+             * candidate offsets the release maps to.
+             *
+             * Reporting the actual probes here is the difference between "detailed" meaning "more
+             * words" and meaning "the values this run really read".
+             */
             if (!detailed) {
                 "opt"
             } else {
-                "match=5.10..6.6 · build=${ctx.device.kernel} · " +
-                    "slide=n/a (no exploit linked)"
+                val release = ctx.device.kernel.ifEmpty { "unknown" }
+                val matched = KERNEL_TABLE.entries.firstOrNull { (prefix, _) ->
+                    release.startsWith(prefix) || release.contains(prefix)
+                }
+
+                val probes = listOf(
+                    "/proc/sys/kernel/kptr_restrict",
+                    "/proc/sys/kernel/randomize_va_space",
+                    "/proc/sys/kernel/osrelease",
+                    "/proc/kallsyms",
+                ).joinToString(" · ") { path ->
+                    val state = runCatching {
+                        val f = File(path)
+                        when {
+                            !f.exists() -> "absent"
+                            !f.canRead() -> "denied"
+                            (f.length() > 4L * 1024 * 1024) -> "huge" // /proc/kallsyms is not seekable
+                            else -> "readable"
+                        }
+                    }.getOrDefault("error")
+                    "$path=$state"
+                }
+
+                buildString {
+                    append("kernel=")
+                    append(release)
+                    append(" · range=")
+                    append(matched?.value?.first ?: "unmapped")
+                    append("..")
+                    append(matched?.value?.second ?: "unmapped")
+                    append(" · slide=unresolved")
+                    append("\nprobes: ")
+                    append(probes)
+                    // Everything below is read from the device, not asserted: the page size, the
+                    // architecture of this process, and how much of /proc/kallsyms is actually
+                    // visible. On stock Android the symbol table is present but every address in
+                    // it reads as zero, which is precisely why an exploit would be needed.
+                    append("\npage=")
+                    append(kernelPageSize())
+                    append("K · arch=")
+                    append(ctx.device.abi)
+                    append(" · kallsyms=")
+                    append(kallsymsState())
+                    if (matched == null) {
+                        append("\nnote: kernel release does not match any known Dopamine target")
+                    }
+                }
             }
         }
 
@@ -129,6 +198,53 @@ object JailbreakEngine {
 
         return steps
     }
+
+    /**
+     * The kernel's page size, in KiB, as reported by the running system.
+     *
+     * Read rather than assumed: 16 KiB pages are the default on arm64 Apple silicon and on many
+     * Android devices, but a 4 KiB kernel is still common, and which one is in use decides what
+     * every address in an exploit means.
+     */
+    private fun kernelPageSize(): String = runCatching {
+        // KernelPageSize in smaps is the MMU's page size for this mapping, which is what an exploit
+        // cares about. smaps_rollup is one file instead of hundreds of per-mapping entries.
+        val rollup = File("/proc/self/smaps_rollup")
+        val line = if (rollup.exists()) {
+            rollup.useLines { lines ->
+                lines.firstOrNull { it.startsWith("KernelPageSize:") }
+            }
+        } else {
+            null
+        }
+        if (line != null) {
+            "${line.substringAfter(':').trim().removeSuffix("kB").trim()}K"
+        } else {
+            // No smaps access on this kernel; say so rather than printing a made-up number.
+            "unknown"
+        }
+    }.getOrDefault("unknown")
+
+    /**
+     * Whether /proc/kallsyms exposes real addresses.
+     *
+     * On an unprivileged Android process the file exists and lists every symbol, but the address
+     * column reads as all zeros because `kptr_restrict` is 2. That is worth showing in the log: it
+     * is the concrete reason a kernel exploit is required, rather than a claim about it.
+     */
+    private fun kallsymsState(): String = runCatching {
+        val file = File("/proc/kallsyms")
+        if (!file.exists()) return@runCatching "absent"
+        if (!file.canRead()) return@runCatching "denied"
+        file.useLines { lines ->
+            val first = lines.firstOrNull { it.isNotBlank() } ?: return@useLines "empty"
+            val addr = first.substringBefore(' ')
+            when {
+                addr.all { it == '0' } -> "zeroed"
+                else -> "visible"
+            }
+        }
+    }.getOrDefault("error")
 
     /**
      * Runs every step, emitting events.
