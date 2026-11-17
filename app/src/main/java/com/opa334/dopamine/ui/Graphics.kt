@@ -190,14 +190,14 @@ fun UserspaceBlink(
     modifier: Modifier = Modifier,
     onFinished: () -> Unit,
 ) {
-    val alpha = remember { Animatable(0f) }
+    val markAlpha = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
         delay(300L)
         repeat(2) {
-            alpha.animateTo(1f, tween(200, easing = LinearEasing))
+            markAlpha.animateTo(1f, tween(200, easing = LinearEasing))
             delay(140L)
-            alpha.animateTo(0f, tween(200, easing = LinearEasing))
+            markAlpha.animateTo(0f, tween(200, easing = LinearEasing))
             delay(90L)
         }
         onFinished()
@@ -210,7 +210,9 @@ fun UserspaceBlink(
         contentAlignment = Alignment.Center,
     ) {
         DopamineMark(
-            modifier = Modifier.graphicsLayer { alpha = alpha.value },
+            // `alpha` here must not be named `alpha`: inside graphicsLayer the scope's own `alpha`
+            // property would shadow it and the assignment would fail to compile.
+            modifier = Modifier.graphicsLayer { alpha = markAlpha.value },
             size = 120.dp,
         )
     }

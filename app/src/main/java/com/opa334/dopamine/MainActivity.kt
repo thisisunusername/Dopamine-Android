@@ -82,9 +82,11 @@ private fun DopamineApp(onFinish: () -> Unit) {
 
     var ui by remember { mutableStateOf(MainUiState()) }
 
-    // Resolved once per composition; both call sites below need the same two strings.
+    // Resolved once per composition; the call sites below need the same strings, and one of them runs
+    // inside a coroutine where stringResource() is not allowed.
     val titleJailbroken = stringResource(R.string.action_jailbroken)
     val titleJailbreak = stringResource(R.string.action_jailbreak)
+    val titleJailbreaking = stringResource(R.string.action_jailbreaking)
 
     // Re-read the daemon on every (re)entry; the activity may have been backgrounded for a long time.
     LaunchedEffect(Unit) {
@@ -150,7 +152,7 @@ private fun DopamineApp(onFinish: () -> Unit) {
                                     busy = true,
                                     expanded = true,
                                     progress = 0f,
-                                    title = stringResource(R.string.action_jailbreaking),
+                                    title = titleJailbreaking,
                                     rows = JailbreakEngine
                                         .steps(context, detailedLog)
                                         .map { LogRow(it.label) },
