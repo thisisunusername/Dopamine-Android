@@ -6,7 +6,7 @@
 <resources>
     <string name="app_name">Dopamine</string>
 
-    <!-- Subtitle under the wordmark. Deliberately over-precise, matching the iOS app's joke. -->
+    <!-- Subtitle under the mark. Deliberately over-precise, matching the iOS app's joke. -->
     <string name="subtitle_version">Android 9.0 - 17.0 (arm64)</string>
     <string name="subtitle_credits">by opa334, évelyne (ElleKit)</string>
 
@@ -60,14 +60,17 @@
     <string name="about_original_authors">Original authors</string>
     <string name="about_ui_reference">UI reference</string>
 
-    <!-- First-run wizard -->
+    <!-- First-run wizard, shown when the jailbreak button is first pressed -->
     <string name="wizard_choose_package_manager">Choose a Package Manager</string>
     <string name="wizard_set_sudo">Set a Sudo Password</string>
     <string name="wizard_choose_desc">The package manager used to install add-ons after the jailbreak. You can change it later in Settings.</string>
     <string name="wizard_sudo_desc">sudo in the jailbroken environment checks this password. It is stored on this device only.</string>
-    <string name="wizard_password_hint">Leave empty to use the default password, alpine.</string>
+    <string name="wizard_confirm_password">Confirm Password</string>
+    <string name="wizard_password_mismatch">The two passwords do not match.</string>
+    <string name="wizard_password_hint">Leave both fields empty to use the default password, alpine.</string>
     <string name="wizard_continue">Continue</string>
     <string name="wizard_start">Start</string>
+    <string name="wizard_cancel">Cancel</string>
 
     <!-- Content descriptions -->
     <string name="cd_back">Back</string>

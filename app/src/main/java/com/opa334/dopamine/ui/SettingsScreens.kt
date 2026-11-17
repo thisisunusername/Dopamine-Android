@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,11 +55,14 @@ fun DetailScaffold(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DopamineColors.Background),
+            // The iOS settings window is `windowColor` (#4C4C4C at 60%) drawn over the same
+            // blurred photo as the main screen, so the photo is painted behind it here.
+            .background(DopamineColors.Window),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .systemBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

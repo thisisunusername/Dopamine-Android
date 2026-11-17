@@ -35,6 +35,7 @@ import com.opa334.dopamine.ui.LogRow
 import com.opa334.dopamine.ui.MainScreen
 import com.opa334.dopamine.ui.MainUiState
 import com.opa334.dopamine.ui.SettingsScreen
+import com.opa334.dopamine.ui.ThemeBackground
 import com.opa334.dopamine.ui.UserspaceBlink
 import com.opa334.dopamine.ui.applyEvent
 import kotlinx.coroutines.delay
@@ -43,9 +44,9 @@ import kotlinx.coroutines.launch
 /**
  * The single activity.
  *
- * Everything is one activity and a small enum of screens rather than a navigation library: there are
- * four destinations, none of them needs a back stack of its own, and the blackout sequence has to be
- * able to finish the activity outright.
+ * Everything is one activity and a small set of enums rather than a navigation library: there are
+ * four destinations, none of them needs a back stack of its own, and the blackout sequence has to
+ * be able to finish the activity outright.
  */
 class MainActivity : ComponentActivity() {
 
@@ -60,7 +61,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { Wizard, Main, Settings, About }
+private enum class Screen { Main, Settings, About }
+
+/** Full-screen things drawn on top of the current screen. */
+private enum class Overlay { None, Wizard, Blackout, Userspace, SpringBoard }
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -68,44 +72,25 @@ private fun DopamineApp(onFinish: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Screens are derived from persisted state on every recomposition, so leaving the app and coming
-    // back cannot show a stale answer — the bug this app is a rebuild of.
-    var everJailbroken by remember { mutableStateOf(JailbreakState.hasEverJailbroken(context)) }
+    // Screens are derived from persisted state on every recomposition, so leaving the app and
+    // coming back cannot show a stale answer — the bug this app is a rebuild of.
     var jailbroken by remember { mutableStateOf(JailbreakState.isJailbroken(context)) }
     var detailedLog by remember { mutableStateOf(JailbreakState.detailedLog(context)) }
     var packageManager by remember { mutableStateOf(JailbreakState.packageManager(context)) }
 
-    var screen by remember {
-        mutableStateOf(if (everJailbroken) Screen.Main else Screen.Wizard)
-    }
+    var screen by remember { mutableStateOf(Screen.Main) }
     var overlay by remember { mutableStateOf(Overlay.None) }
-
     var ui by remember { mutableStateOf(MainUiState()) }
 
-    // Resolved once per composition; the call sites below need the same strings, and one of them runs
-    // inside a coroutine where stringResource() is not allowed.
+    // Resolved during composition: the run is started from a coroutine, where stringResource()
+    // is not allowed.
     val titleJailbroken = stringResource(R.string.action_jailbroken)
     val titleJailbreak = stringResource(R.string.action_jailbreak)
     val titleJailbreaking = stringResource(R.string.action_jailbreaking)
 
-    // Re-read the daemon on every (re)entry; the activity may have been backgrounded for a long time.
-    LaunchedEffect(Unit) {
-        jailbroken = JailbreakState.isJailbroken(context)
-        everJailbroken = JailbreakState.hasEverJailbroken(context)
-        packageManager = JailbreakState.packageManager(context)
-        ui = ui.copy(
-            jailbroken = jailbroken,
-            title = if (jailbroken) titleJailbroken else titleJailbreak,
-            packageManager = packageManager,
-            deviceLine = DeviceProfile.read().let { "${it.manufacturer} ${it.model} · Android ${it.androidRelease}" },
-        )
-        if (!everJailbroken) screen = Screen.Wizard
-    }
-
-    /** Recomputes the jailbreak flag from the daemon and pushes it into the UI state. */
+    /** Re-reads the daemon and pushes the result into the UI state. */
     fun refreshState() {
         jailbroken = JailbreakState.isJailbroken(context)
-        everJailbroken = JailbreakState.hasEverJailbroken(context)
         packageManager = JailbreakState.packageManager(context)
         ui = ui.copy(
             jailbroken = jailbroken,
@@ -115,7 +100,50 @@ private fun DopamineApp(onFinish: () -> Unit) {
         )
     }
 
-    Box(Modifier.fillMaxSize().background(DopamineColors.Background)) {
+    /** Starts the staged run. Called after the wizard (if any) has collected its answers. */
+    fun startRun() {
+        scope.launch {
+            ui = ui.copy(
+                busy = true,
+                expanded = true,
+                progress = 0f,
+                title = titleJailbreaking,
+                rows = JailbreakEngine.steps(context, detailedLog).map { LogRow(it.label) },
+            )
+            val total = ui.rows.size
+            JailbreakEngine.run(
+                context = context,
+                detailed = detailedLog,
+                onEvent = { event ->
+                    ui = ui.applyEvent(event, total)
+                    if (event is StepEvent.Done) {
+                        if (event.ok) {
+                            overlay = Overlay.Blackout
+                        } else {
+                            overlay = Overlay.None
+                            refreshState()
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    // Re-read the daemon on every (re)entry; the activity may have been backgrounded for a long time.
+    LaunchedEffect(Unit) {
+        jailbroken = JailbreakState.isJailbroken(context)
+        packageManager = JailbreakState.packageManager(context)
+        ui = ui.copy(
+            jailbroken = jailbroken,
+            title = if (jailbroken) titleJailbroken else titleJailbreak,
+            packageManager = packageManager,
+            deviceLine = DeviceProfile.read().let {
+                "${it.manufacturer} ${it.model} · Android ${it.androidRelease} (API ${it.sdk})"
+            },
+        )
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
 
         AnimatedContent(
             targetState = screen,
@@ -123,67 +151,35 @@ private fun DopamineApp(onFinish: () -> Unit) {
             label = "screen",
         ) { target ->
             when (target) {
-                Screen.Wizard -> FirstRunWizard { pm, password ->
-                    JailbreakState.setPackageManager(context, pm)
-                    JailbreakState.setSudoPassword(context, password)
-                    packageManager = pm
-                    screen = Screen.Main
-                    ui = ui.copy(packageManager = pm)
-                }
-
                 Screen.Main -> MainScreen(
-                    state = ui.copy(
-                        jailbroken = jailbroken,
-                        packageManager = packageManager,
-                    ),
+                    state = ui.copy(jailbroken = jailbroken, packageManager = packageManager),
                     onJailbreak = {
                         if (jailbroken) {
-                            // Already rooted: the card becomes a userspace restart, which is what
-                            // Dopamine does rather than re-running the exploit.
+                            // Already jailbroken: the card means "restart userspace", which is
+                            // what Dopamine does rather than re-running the exploit.
                             scope.launch {
-                                // The overlay drives its own timing and clears itself when the blink
-                                // finishes; adding a delay here would hold a second black screen.
                                 overlay = Overlay.Userspace
                                 JailbreakEngine.restartUserspace(context)
                             }
+                        } else if (!JailbreakState.hasEverJailbroken(context) &&
+                            JailbreakState.packageManager(context) == null
+                        ) {
+                            // First run: ask for the package manager and sudo password now, not
+                            // at launch, and only then start.
+                            overlay = Overlay.Wizard
                         } else {
-                            scope.launch {
-                                ui = ui.copy(
-                                    busy = true,
-                                    expanded = true,
-                                    progress = 0f,
-                                    title = titleJailbreaking,
-                                    rows = JailbreakEngine
-                                        .steps(context, detailedLog)
-                                        .map { LogRow(it.label) },
-                                )
-                                val total = ui.rows.size
-                                JailbreakEngine.run(
-                                    context = context,
-                                    detailed = detailedLog,
-                                    onEvent = { event ->
-                                        ui = ui.applyEvent(event, total)
-                                        if (event is StepEvent.Done) {
-                                            if (event.ok) {
-                                                overlay = Overlay.Blackout
-                                            } else {
-                                                refreshState()
-                                            }
-                                        }
-                                    },
-                                )
-                            }
+                            startRun()
                         }
                     },
                     onRestartSpringBoard = {
                         /*
                          * Eight seconds of black, then the app closes itself.
                          *
-                         * An app cannot restart the launcher, so the closest honest behaviour is to
-                         * disappear the way a respring makes everything disappear: the screen goes
-                         * black and the app is gone. It is not reopened automatically — the user
-                         * taps the icon, the daemon is still alive, and the app comes back on
-                         * "Jailbroken", which is the observable result a respring would have.
+                         * An app cannot restart the launcher, so the closest honest behaviour is
+                         * to disappear the way a respring makes everything disappear: the screen
+                         * goes black and the app is gone. It is not reopened automatically — the
+                         * user taps the icon, the daemon is still alive, and the app comes back
+                         * on "Jailbroken", which is the observable result a respring would have.
                          */
                         scope.launch {
                             overlay = Overlay.SpringBoard
@@ -218,10 +214,7 @@ private fun DopamineApp(onFinish: () -> Unit) {
                     },
                     sudoPassword = JailbreakState.sudoPassword(context),
                     onSudoPasswordChange = { JailbreakState.setSudoPassword(context, it) },
-                    onBack = {
-                        screen = Screen.Main
-                        refreshState()
-                    },
+                    onBack = { screen = Screen.Main },
                 )
 
                 Screen.About -> AboutScreen(
@@ -231,31 +224,42 @@ private fun DopamineApp(onFinish: () -> Unit) {
             }
         }
 
-        // ---- Overlays: they cover the whole window, including the system bars, because the point of
-        // the blackout is that the screen appears to switch off.
-        when (overlay) {
-            Overlay.None -> Unit
+        // ---- Overlays ----
 
-            Overlay.Blackout -> BlackoutSequence {
-                // The daemon is already up; mark the run and kill the activity so the next launch
-                // starts on "Jailbroken" exactly as it would on iOS.
-                JailbreakState.markEverJailbroken(context)
-                onFinish()
+        if (overlay == Overlay.Wizard) {
+            // The wizard draws over the main screen, so cancelling returns to a screen that
+            // already looks right instead of a blank transition.
+            Box(Modifier.fillMaxSize().background(Color(0xCC000000))) {
+                ThemeBackground()
+                Box(Modifier.fillMaxSize().background(Color(0x99000000)))
+                FirstRunWizard(
+                    onCancel = { overlay = Overlay.None },
+                    onFinished = { pm, password ->
+                        JailbreakState.setPackageManager(context, pm)
+                        JailbreakState.setSudoPassword(context, password)
+                        packageManager = pm
+                        overlay = Overlay.None
+                        startRun()
+                    },
+                )
             }
+        }
 
-            Overlay.Userspace -> UserspaceBlink {
-                overlay = Overlay.None
-                refreshState()
-            }
+        if (overlay == Overlay.Blackout) {
+            BlackoutSequence(onFinished = { onFinish() })
+        }
 
-            Overlay.SpringBoard -> Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Black),
+        if (overlay == Overlay.Userspace) {
+            UserspaceBlink(
+                onFinished = {
+                    overlay = Overlay.None
+                    refreshState()
+                },
             )
+        }
+
+        if (overlay == Overlay.SpringBoard) {
+            Box(Modifier.fillMaxSize().background(Color.Black))
         }
     }
 }
-
-/** Full-screen covers. */
-private enum class Overlay { None, Blackout, Userspace, SpringBoard }

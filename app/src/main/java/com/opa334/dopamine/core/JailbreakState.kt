@@ -39,6 +39,17 @@ object JailbreakState {
     }
 
     /**
+     * Reset after "Remove Jailbreak".
+     *
+     * The flag is cleared so the next jailbreak asks for the package manager and sudo password
+     * again — those describe the environment that was just torn down, and asking again is the
+     * honest behaviour rather than silently reusing stale choices.
+     */
+    fun clearEverJailbroken(context: Context) {
+        prefs(context).edit().putBoolean(KEY_EVER, false).apply()
+    }
+
+    /**
      * Whether the daemon is alive right now.
      *
      * `kill -0` is used rather than a file check because it answers "is this process still running"

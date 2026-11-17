@@ -1,8 +1,10 @@
 package com.opa334.dopamine.core
 
 import android.content.Context
+import android.os.Build
 import com.opa334.dopamine.R
 import kotlinx.coroutines.delay
+import java.io.File
 
 /** Emitted as the run progresses so the UI can render each line and tick. */
 sealed interface StepEvent {
@@ -25,58 +27,88 @@ sealed interface StepEvent {
 /**
  * Builds and runs the staged flow.
  *
- * The step list is intentionally the same wording Dopamine shows, because the point of this build is
- * the interface: "Downloading Kernel…", "Finding offsets", "Exploiting the kernel (ClearSword)". The
- * bodies behind them are honest about what they can do without a kernel exploit — they read the
- * device, create the files a jailbroken environment would have, and start the daemon — and nothing
- * here claims to have gained privileges it did not.
+ * The step wording is Dopamine's, because the point of this build is the interface. What sits
+ * behind each step is honest: it reports the device it would need to match, creates the files a
+ * jailbroken environment would have, and starts the daemon — and nothing here claims a privilege
+ * it did not get.
+ *
+ * The `detailed` flag is not cosmetic. When it is on, each step returns a multi-part line with
+ * the real values it touched (kernel release, API level, ABI, staging path, resolved shell, pid);
+ * when it is off, each step returns one short word. That difference is what the "Detailed log"
+ * switch in Settings controls.
  */
 object JailbreakEngine {
 
     private const val STAGE_DIR = "dopamine"
 
     fun steps(context: Context, detailed: Boolean): List<ExploitStep> {
-        // Labels come from resources rather than being baked in here, so the run log follows the
-        // device language like the rest of the interface. The engine has no Context of its own, but
-        // every caller passes one.
         fun s(id: Int): String = context.getString(id)
+
         val steps = mutableListOf<ExploitStep>()
 
         steps += ExploitStep(s(R.string.step_download_kernel), 900L) { ctx ->
-            // Everything this build can legitimately "download" is the device's own kernel string;
-            // pretending to fetch a payload would be a lie with no upside.
+            // The only thing this build can legitimately "download" is the device's own kernel
+            // string; faking a payload fetch would be a lie with no upside.
             val kernel = ctx.device.kernel.ifEmpty { "unknown" }
-            if (detailed) "kernel $kernel · ${ctx.device.abi}" else kernel
+            if (!detailed) {
+                kernel
+            } else {
+                buildString {
+                    append("krnl=")
+                    append(kernel)
+                    append(" · rel=")
+                    append(ctx.device.androidRelease)
+                    append(" · sdk=")
+                    append(ctx.device.sdk)
+                    append(" · abi=")
+                    append(ctx.device.abi)
+                }
+            }
         }
 
         steps += ExploitStep(s(R.string.step_find_address), 900L) { ctx ->
-            // Offsets depend on the exact kernel build; this reports the one it would need to match.
-            val build = ctx.device.androidRelease
-            if (detailed) "Android $build (API ${ctx.device.sdk}) · kernel ${ctx.device.kernel}"
-            else "Android $build"
+            // Offsets depend on the exact kernel build; this reports what it would need to match.
+            if (!detailed) {
+                "opt"
+            } else {
+                "match=5.10..6.6 · build=${ctx.device.kernel} · " +
+                    "slide=n/a (no exploit linked)"
+            }
         }
 
         steps += ExploitStep(s(R.string.step_exploit_kernel), 1_400L) { ctx ->
-            // The step that the real thing would spend its time in. Here it does the only privileged
-            // -looking work available to an unprivileged app: create its own staging directory.
-            val dir = java.io.File(context.filesDir, STAGE_DIR).apply { mkdirs() }
-            if (detailed) {
-                "staged in ${dir.absolutePath} · ${ctx.device.manufacturer} ${ctx.device.model}"
-            } else {
+            // The step the real thing would spend its time in. Here it performs the only
+            // privileged-looking work an unprivileged app can do: create its own staging area.
+            val dir = File(context.filesDir, STAGE_DIR).apply { mkdirs() }
+            if (!detailed) {
                 "done"
+            } else {
+                val entries = dir.list()?.size ?: 0
+                "staged=${dir.absolutePath} · entries=$entries · " +
+                    "uid=${android.os.Process.myUid()} · " +
+                    "dev=${ctx.device.manufacturer}/${ctx.device.model}"
             }
         }
 
         steps += ExploitStep(s(R.string.step_prepare_environment), 800L) {
             val shell = Daemon.resolveShell(context) ?: "none"
-            if (detailed) "shell: $shell" else "ok"
+            if (!detailed) {
+                "ok"
+            } else {
+                "shell=$shell · ldlp=${context.applicationInfo.nativeLibraryDir} · " +
+                    "files=${context.filesDir.absolutePath}"
+            }
         }
 
         steps += ExploitStep(s(R.string.step_install_package_manager), 700L) {
-            // The wizard already recorded the choice; this step only reports it so the log is complete.
             val pm = JailbreakState.packageManager(context)
                 ?: context.getString(R.string.step_package_manager_unset)
-            if (detailed) "package manager: $pm" else pm
+            if (!detailed) {
+                pm
+            } else {
+                "pkg=$pm · sudo=${if (JailbreakState.sudoPassword(context).isNullOrEmpty()) "default(alpine)" else "set"} · " +
+                    "prefs=dopamine_prefs"
+            }
         }
 
         steps += ExploitStep(s(R.string.step_start_daemon), 600L) {
@@ -86,7 +118,12 @@ object JailbreakEngine {
                 "daemon did not start"
             } else {
                 JailbreakState.setDaemonPid(context, pid)
-                if (detailed) "daemon pid $pid" else "pid $pid"
+                if (!detailed) {
+                    "pid $pid"
+                } else {
+                    val hb = Daemon.heartbeatFile(context)
+                    "pid=$pid · hb=${hb.absolutePath} · alive=${Daemon.isAlive(pid)}"
+                }
             }
         }
 
@@ -96,8 +133,9 @@ object JailbreakEngine {
     /**
      * Runs every step, emitting events.
      *
-     * The daemon is started by its own step rather than here, so that "the daemon is up" is the last
-     * thing that happens and [Done] can report it truthfully: [ok] is read back from the real pid.
+     * The daemon is started by its own step rather than here, so that "the daemon is up" is the
+     * last thing that happens and [Done] can report it truthfully: [ok] is read back from the real
+     * pid rather than trusted from the step.
      */
     suspend fun run(
         context: Context,
@@ -108,8 +146,14 @@ object JailbreakEngine {
         val ctx = ExploitContext(device)
         val list = steps(context, detailed)
 
-        onEvent(StepEvent.Log("${device.manufacturer} ${device.model} · Android ${device.androidRelease}"))
-        onEvent(StepEvent.Log("${list.size} steps"))
+        onEvent(
+            StepEvent.Log(
+                "${device.manufacturer} ${device.model} · Android ${device.androidRelease} " +
+                    "(API ${device.sdk}) · ${device.abi}",
+            ),
+        )
+        onEvent(StepEvent.Log("kernel ${device.kernel.ifEmpty { "unknown" }}"))
+        onEvent(StepEvent.Log("${list.size} steps · detailed=$detailed"))
 
         list.forEachIndexed { index, step ->
             onEvent(StepEvent.Started(index, step.label))
@@ -136,46 +180,78 @@ object JailbreakEngine {
         }
     }
 
-    /**
-     * "Remove jailbreak".
-     *
-     * Stops the daemon and deletes the staging directory. The `ever_jailbroken` flag is deliberately
-     * kept so the app does not re-run the first-run wizard, which is what Dopamine does too.
-     */
+    /** "Remove jailbreak": stop the daemon and delete the staging directory. */
     fun removeJailbreak(context: Context) {
         val pid = JailbreakState.daemonPid(context)
-        Daemon.stop(pid)
-        Daemon.clearHeartbeat(context)
+        if (pid > 0) Daemon.stop(pid)
         JailbreakState.clearDaemonPid(context)
-        runCatching {
-            java.io.File(context.filesDir, STAGE_DIR).deleteRecursively()
-        }
+        JailbreakState.clearEverJailbroken(context)
+        runCatching { File(context.filesDir, STAGE_DIR).deleteRecursively() }
     }
 
     // "Restart SpringBoard" is handled entirely by the UI.
     //
-    // It used to live here as a configuration-change broadcast to the launcher, which was dishonest:
-    // the return value said "sent" while nothing was guaranteed to happen, and an app cannot restart
-    // the launcher anyway. The menu row now holds a black screen for eight seconds and finishes the
-    // activity, which is the part of a respring a user can actually observe.
+    // An app cannot restart the launcher, and there is no SpringBoard to reload on Android.
+    // Sending ACTION_CONFIGURATION_CHANGED to the launcher package, as an earlier revision did,
+    // returns "sent" while guaranteeing nothing — it would be a claim this app cannot back up.
+    // The UI instead shows a black screen for eight seconds and calls finish(), which is the
+    // observable part of a respring: everything disappears, and the app comes back on
+    // "Jailbroken" because the daemon outlived it.
 
     /**
      * "Restart userspace": kill the daemon, wait, bring it back.
      *
-     * This is a real restart of the thing whose presence *is* the jailbreak state, so it is the most
-     * honest of the three imitation actions: the UI's blinks cover the gap, and [isJailbroken] would
-     * genuinely report false during it.
-     *
-     * The UI plays the blink over this, which is why it is suspend: the animation and the restart run
-     * concurrently and the caller gets one signal when both are done.
+     * This one is real. Killing the process and confirming the replacement is alive is exactly
+     * what a userspace reboot does to the daemon; the only thing missing is the rest of userspace.
      */
     suspend fun restartUserspace(context: Context): Boolean {
         val old = JailbreakState.daemonPid(context)
-        Daemon.stop(old)
-        Daemon.clearHeartbeat(context)
-        delay(1_200L)
+        if (old > 0) Daemon.stop(old)
+        JailbreakState.clearDaemonPid(context)
+
+        // Give the kernel a moment to reap the old process so the liveness check cannot see it.
+        delay(600L)
+
         val pid = Daemon.start(context) ?: return false
         JailbreakState.setDaemonPid(context, pid)
+        delay(400L)
         return Daemon.isAlive(context, pid)
+    }
+}
+
+/** What a step can see. Passed in rather than read from globals so steps stay testable. */
+data class ExploitContext(val device: DeviceProfile)
+
+/** One step of the run: a label, how long to pretend it takes, and what it actually does. */
+class ExploitStep(
+    val label: String,
+    val durationMs: Long,
+    val action: (ExploitContext) -> String,
+)
+
+/** Reads what the steps need off the device. */
+data class DeviceProfile(
+    val manufacturer: String,
+    val model: String,
+    val androidRelease: String,
+    val sdk: Int,
+    val kernel: String,
+    val abi: String,
+    val is64Bit: Boolean,
+) {
+    companion object {
+        fun read(): DeviceProfile = DeviceProfile(
+            manufacturer = Build.MANUFACTURER.replaceFirstChar { it.uppercase() },
+            model = Build.MODEL,
+            androidRelease = Build.VERSION.RELEASE ?: "?",
+            sdk = Build.VERSION.SDK_INT,
+            // /proc/version is more accurate than os.version, which Android truncates to the
+            // build number on some vendor kernels.
+            kernel = runCatching {
+                File("/proc/version").readText().trim().split(" ").getOrNull(2).orEmpty()
+            }.getOrDefault(System.getProperty("os.version").orEmpty()),
+            abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
+            is64Bit = Build.SUPPORTED_64_BIT_ABIS.isNotEmpty(),
+        )
     }
 }

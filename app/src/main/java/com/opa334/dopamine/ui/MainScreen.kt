@@ -1,12 +1,9 @@
 package com.opa334.dopamine.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,39 +13,40 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opa334.dopamine.R
 import com.opa334.dopamine.core.StepEvent
 
-/** One row of the log under the progress bar. */
+/** One line of the log shown inside the expanded button. */
 data class LogRow(
     val label: String,
     val detail: String? = null,
@@ -70,13 +68,20 @@ data class MainUiState(
     val packageManager: String? = null,
 )
 
+/** Sizes lifted from DOGlobalAppearance.h in the iOS sources. */
+private val OuterPadding = 30.dp
+private val ActionHeight = 73.dp
+private val InnerPadding = 20.dp
+private val InnerTopPadding = 5.dp
+private val CardCorner = 14.dp
+
 /**
- * The main screen.
+ * The main screen, rebuilt to match DOMainViewController.
  *
- * Layout follows Dopamine exactly: a heavy wordmark at the top, a deliberately over-precise subtitle
- * under it, a card of actions, and a single very large "Jailbreak" card pinned near the bottom. The
- * log only appears while a run is in progress, which is why it animates in rather than reserving
- * space — on iOS the header slides up and the button grows to fill the screen.
+ * iOS uses a vertical stack pinned 30 pt from the sides, sized to 73% of the window height and
+ * centred, with the header inset 5 pt further and a 60 pt placeholder holding the jailbreak
+ * button near the bottom. The same numbers are used here so the proportions match rather than
+ * merely resemble.
  */
 @Composable
 fun MainScreen(
@@ -88,143 +93,106 @@ fun MainScreen(
     onAbout: () -> Unit,
     onRemoveJailbreak: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DopamineColors.Background)
-            .padding(horizontal = 20.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        Spacer(Modifier.height(48.dp))
+    Box(Modifier.fillMaxSize()) {
+        ThemeBackground()
 
-        // ---- Header ----
-        DopamineWordmark()
-        Spacer(Modifier.height(6.dp))
-        Text(
-            // Deliberately over-precise, which is the joke the original subtitle makes.
-            text = stringResource(R.string.subtitle_version),
-            color = DopamineColors.TextSecondary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-        )
-        Text(
-            text = stringResource(R.string.subtitle_credits),
-            color = DopamineColors.TextSecondary,
-            fontSize = 13.sp,
-        )
-
-        Spacer(Modifier.height(28.dp))
-
-        // ---- Action card ----
-        DopamineCard {
-            ActionRow(
-                icon = Icons.Filled.Settings,
-                title = stringResource(R.string.menu_settings),
-                enabled = true,
-                onClick = onSettings,
-            )
-            CardDivider()
-            ActionRow(
-                icon = Icons.Filled.Refresh,
-                title = stringResource(R.string.menu_restart_springboard),
-                enabled = state.jailbroken,
-                onClick = onRestartSpringBoard,
-            )
-            CardDivider()
-            ActionRow(
-                icon = Icons.Filled.RestartAlt,
-                title = stringResource(R.string.menu_restart_userspace),
-                enabled = state.jailbroken,
-                onClick = onRestartUserspace,
-            )
-            CardDivider()
-            ActionRow(
-                icon = Icons.Filled.Info,
-                title = stringResource(R.string.menu_about),
-                enabled = true,
-                onClick = onAbout,
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ---- Log, only while expanded ----
-        AnimatedVisibility(
-            visible = state.expanded,
-            enter = expandVertically(),
-            exit = shrinkVertically(),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = OuterPadding),
         ) {
-            Column {
-                LogPanel(state = state)
-                Spacer(Modifier.height(16.dp))
-            }
-        }
+            Spacer(Modifier.height(28.dp))
 
-        // Pushes the jailbreak card towards the bottom without hard-coding a screen height.
-        Spacer(Modifier.weight(1f))
-
-        // ---- Jailbreak card ----
-        JailbreakCard(
-            // Falls back to a resource so the very first frame, before MainActivity has read the
-            // daemon, still shows a label rather than an empty button.
-            title = state.title.ifEmpty {
-                stringResource(
-                    if (state.jailbroken) R.string.action_jailbroken else R.string.action_jailbreak,
+            // ---- Header ----
+            Column(Modifier.padding(start = 5.dp)) {
+                DopamineHeader(
+                    subtitle = stringResource(R.string.subtitle_version),
+                    credits = stringResource(R.string.subtitle_credits),
                 )
-            },
-            busy = state.busy,
-            enabled = !state.busy,
-            jailbroken = state.jailbroken,
-            onClick = onJailbreak,
-            onRemove = onRemoveJailbreak,
-        )
+            }
 
-        Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(26.dp))
 
-        // Shown only when the app knows which package manager is installed, so a fresh install does
-        // not display an empty "package manager: " line.
-        state.packageManager?.let {
-            Text(
-                text = stringResource(R.string.footer_package_manager, it),
-                color = DopamineColors.TextSecondary,
-                fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth(),
+            // ---- Action card ----
+            ActionCard {
+                ActionRow(Icons.Filled.Settings, stringResource(R.string.menu_settings), true, onSettings)
+                Separator()
+                ActionRow(
+                    Icons.Filled.Refresh,
+                    stringResource(R.string.menu_restart_springboard),
+                    state.jailbroken,
+                    onRestartSpringBoard,
+                )
+                Separator()
+                ActionRow(
+                    Icons.Filled.RestartAlt,
+                    stringResource(R.string.menu_restart_userspace),
+                    state.jailbroken,
+                    onRestartUserspace,
+                )
+                Separator()
+                ActionRow(Icons.Filled.Info, stringResource(R.string.menu_about), true, onAbout)
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // ---- Log, only while a run is in progress ----
+            // AnimatedVisibility is deliberately not used: the panel is only on screen during a
+            // run, and the button below it must not move while rows arrive.
+            if (state.expanded) {
+                LogPanel(state)
+                Spacer(Modifier.height(14.dp))
+            }
+
+            // ---- Jailbreak button ----
+            JailbreakButton(
+                title = state.title.ifEmpty {
+                    stringResource(
+                        if (state.jailbroken) R.string.action_jailbroken else R.string.action_jailbreak,
+                    )
+                },
+                jailbroken = state.jailbroken,
+                busy = state.busy,
+                enabled = !state.busy,
+                onClick = onJailbreak,
+                onRemove = onRemoveJailbreak,
             )
-        }
-        state.deviceLine.takeIf { it.isNotEmpty() }?.let {
-            Text(
-                text = it,
-                color = DopamineColors.TextSecondary.copy(alpha = 0.6f),
-                fontSize = 11.sp,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
 
-        Spacer(Modifier.height(16.dp))
+            // The iOS layout reserves 60 pt for the button; the remaining space keeps it clear of
+            // the bottom edge on tall screens.
+            Spacer(Modifier.height(60.dp))
+        }
     }
 }
 
+/**
+ * The translucent rounded card that the action rows sit in.
+ *
+ * `actionMenuColor` at full strength (which is itself 45% alpha), corner radius 14 and the
+ * continuous curve that iOS asks for — Compose's RoundedCornerShape is already continuous.
+ */
 @Composable
-private fun DopamineCard(content: @Composable () -> Unit) {
+private fun ActionCard(content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(DopamineColors.Menu),
+            .clip(RoundedCornerShape(CardCorner))
+            .background(DopamineColors.Menu)
+            .padding(horizontal = InnerPadding, vertical = InnerTopPadding),
     ) {
         content()
     }
 }
 
-@Composable
-private fun CardDivider() {
-    HorizontalDivider(
-        color = DopamineColors.Separator,
-        thickness = 0.5.dp,
-        modifier = Modifier.padding(start = 52.dp),
-    )
-}
-
+/**
+ * One row.
+ *
+ * The iOS row is a plain UIButtonConfiguration with a 14 pt medium-weight icon, 10 pt image
+ * padding and white text. Disabled rows keep the text at 40% so the eye can tell them apart
+ * without them vanishing into the card.
+ */
 @Composable
 private fun ActionRow(
     icon: ImageVector,
@@ -232,195 +200,216 @@ private fun ActionRow(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    // A disabled row uses a lower alpha rather than a different colour, which is how iOS greys out;
-    // a colour swap reads as a different state instead of an unavailable one.
-    val contentAlpha = if (enabled) 1f else 0.35f
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 15.dp),
+            .height(ActionHeight)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = DopamineColors.TextPrimary.copy(alpha = contentAlpha),
-            modifier = Modifier.size(22.dp),
+            tint = if (enabled) DopamineColors.TextPrimary else DopamineColors.TextDisabled,
+            modifier = Modifier.size(20.dp),
         )
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(10.dp))
         Text(
             text = title,
-            color = DopamineColors.TextPrimary.copy(alpha = contentAlpha),
-            style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) DopamineColors.TextPrimary else DopamineColors.TextDisabled,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Normal,
         )
     }
 }
 
 @Composable
-private fun LogPanel(state: MainUiState) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(DopamineColors.Menu)
-            .padding(16.dp),
-    ) {
-        val animated by animateFloatAsState(targetValue = state.progress, label = "progress")
-        LinearProgressIndicator(
-            progress = { animated },
-            color = DopamineColors.TextPrimary,
-            trackColor = DopamineColors.Separator,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp)),
-        )
-
-        Spacer(Modifier.height(14.dp))
-
-        state.rows.forEach { row ->
-            LogRowView(row)
-        }
-    }
-}
-
-@Composable
-private fun LogRowView(row: LogRow) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Box(
-            modifier = Modifier.size(18.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            when (row.state) {
-                RowState.Pending -> Box(
-                    Modifier
-                        .size(7.dp)
-                        .background(DopamineColors.TextSecondary.copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
-                )
-                RowState.Running -> CircularProgressIndicator(
-                    strokeWidth = 1.8.dp,
-                    color = DopamineColors.TextSecondary,
-                    modifier = Modifier.size(13.dp),
-                )
-                RowState.Done -> Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = DopamineColors.Success,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-        Spacer(Modifier.width(10.dp))
-        Column {
-            Text(
-                text = row.label,
-                color = if (row.state == RowState.Pending) {
-                    DopamineColors.TextSecondary
-                } else {
-                    DopamineColors.TextPrimary
-                },
-                fontSize = 14.sp,
-                // Finished steps turn green, which is the only colour in the log.
-                fontWeight = if (row.state == RowState.Done) FontWeight.Medium else FontWeight.Normal,
-            )
-            row.detail?.let {
-                Text(
-                    text = it,
-                    color = DopamineColors.TextSecondary,
-                    fontSize = 12.sp,
-                )
-            }
-        }
-    }
+private fun Separator() {
+    HorizontalDivider(
+        color = DopamineColors.Separator,
+        thickness = 0.5.dp,
+        modifier = Modifier.padding(horizontal = 2.dp),
+    )
 }
 
 /**
- * The big bottom card.
+ * The big button at the bottom.
  *
- * It is white, not grey, because that is what makes it the single obvious action on the screen; the
- * rest of the interface is deliberately dim so this is the only thing that draws the eye.
+ * It is not white: DOJailbreakButton sets its background to `menuColorWithAlpha:1.0`, i.e. the
+ * same translucent grey as the card, radius 14. The title carries a `lock.open` glyph while the
+ * device is unsupported/jailbreakable and the label switches with state.
  */
 @Composable
-private fun JailbreakCard(
+private fun JailbreakButton(
     title: String,
+    jailbroken: Boolean,
     busy: Boolean,
     enabled: Boolean,
-    jailbroken: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.7f)
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (jailbroken) DopamineColors.MenuRaised else Color.White)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                enabled = enabled,
-                onClick = onClick,
-            )
-            .padding(vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+                .clip(RoundedCornerShape(CardCorner))
+                .alpha(if (enabled) 1f else 0.6f)
+                .background(DopamineColors.Menu)
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = enabled,
+                    onClick = onClick,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
             if (busy) {
-                CircularProgressIndicator(
-                    strokeWidth = 2.dp,
-                    color = if (jailbroken) DopamineColors.TextPrimary else DopamineColors.Background,
+                ProgressRing(size = 18.dp)
+                Spacer(Modifier.width(10.dp))
+            } else {
+                Icon(
+                    imageVector = if (jailbroken) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                    contentDescription = null,
+                    tint = DopamineColors.TextPrimary,
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(10.dp))
             }
             Text(
                 text = title,
-                color = if (jailbroken) DopamineColors.TextPrimary else DopamineColors.Background,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
+                color = DopamineColors.TextPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.widthIn(max = 260.dp),
+                textAlign = TextAlign.Center,
             )
         }
-    }
 
-    // "Remove jailbreak" only exists once there is something to remove; putting it under the main
-    // card instead of inside it keeps the primary action a single full-width target.
-    if (jailbroken) {
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = stringResource(R.string.menu_remove_jailbreak),
-            color = DopamineColors.Danger,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(DopamineColors.Menu)
-                .clickable(onClick = onRemove)
-                .padding(vertical = 14.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
+        // "Remove jailbreak" only exists once there is something to remove.
+        if (jailbroken) {
+            Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .clip(RoundedCornerShape(CardCorner))
+                    .clickable(onClick = onRemove),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.menu_remove_jailbreak),
+                    color = DopamineColors.Danger,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
     }
 }
 
 /**
- * Drives the log from [StepEvent]s.
+ * The log shown while a run is in progress.
  *
- * Kept as a pure function of the event stream so the screen has no hidden state: each event either
- * appends a row, flips one to running or done, or moves the bar.
+ * This is where "Detailed log" earns its name. With the switch off the panel shows only the
+ * step labels and a one-word result; with it on, JailbreakEngine returns a much longer result
+ * string for each step (kernel release, API level, ABI, the staging path, the resolved shell,
+ * the daemon pid) and those are printed here in a monospace block.
  */
+@Composable
+private fun LogPanel(state: MainUiState) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(CardCorner))
+            .background(Color(0x8C000000))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        // Device line first: it is the same information the header would carry on iOS.
+        if (state.deviceLine.isNotEmpty()) {
+            Text(
+                text = state.deviceLine,
+                color = DopamineColors.TextSecondary,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
+        state.rows.forEach { row ->
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    text = when (row.state) {
+                        RowState.Done -> "✓"
+                        RowState.Running -> "›"
+                        RowState.Pending -> "·"
+                    },
+                    color = when (row.state) {
+                        RowState.Done -> DopamineColors.Success
+                        RowState.Running -> DopamineColors.TextPrimary
+                        RowState.Pending -> DopamineColors.TextSecondary
+                    },
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.width(14.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = row.label,
+                        color = if (row.state == RowState.Pending) {
+                            DopamineColors.TextSecondary
+                        } else {
+                            DopamineColors.TextPrimary
+                        },
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    // The detail line is the whole point of the toggle: only present when the
+                    // engine was asked for detail.
+                    row.detail?.takeIf { it.isNotEmpty() }?.let {
+                        Text(
+                            text = "  $it",
+                            color = DopamineColors.TextSecondary,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+
+        // Progress bar, mirroring the thin bar under the log on iOS.
+        Spacer(Modifier.height(2.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(0x33FFFFFF)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(state.progress.coerceIn(0f, 1f))
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(DopamineColors.TextPrimary),
+            )
+        }
+    }
+}
+
+/** Drives the log from [StepEvent]s so the screen holds no hidden state. */
 fun MainUiState.applyEvent(event: StepEvent, totalSteps: Int): MainUiState {
     val denom = totalSteps.coerceAtLeast(1)
     return when (event) {
-        // Header lines are informational; the rows are built from the step list up front, so there is
-        // nothing to append here.
-        is StepEvent.Log -> this
+        is StepEvent.Log -> copy(rows = rows + LogRow(event.text))
         is StepEvent.Started -> copy(
             rows = rows.mapIndexed { i, row ->
                 if (i == event.index) row.copy(state = RowState.Running) else row

@@ -51,9 +51,12 @@
     <string name="wizard_set_sudo">设置 sudo 密码</string>
     <string name="wizard_choose_desc">越狱后用来安装插件的包管理器，之后可以在设置里更改。</string>
     <string name="wizard_sudo_desc">越狱环境中的 sudo 会验证这个密码。只保存在本机。</string>
-    <string name="wizard_password_hint">留空则使用默认密码 alpine。</string>
+    <string name="wizard_confirm_password">确认密码</string>
+    <string name="wizard_password_mismatch">两次输入的密码不一致。</string>
+    <string name="wizard_password_hint">两栏都留空则使用默认密码 alpine。</string>
     <string name="wizard_continue">继续</string>
     <string name="wizard_start">开始</string>
+    <string name="wizard_cancel">取消</string>
 
     <string name="cd_back">返回</string>
     <string name="cd_selected">已选择</string>

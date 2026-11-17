@@ -1,102 +1,116 @@
 package com.opa334.dopamine.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import com.opa334.dopamine.R
 
 /**
- * Dopamine's palette.
+ * The colours, taken from the iOS app rather than invented.
  *
- * iOS's Dopamine is a near-black screen with two greys: one for the menu card and one for the
- * jailbreak card. The same two values are used here so the Android build reads as the same app
- * rather than merely a similar one.
+ * The window is not black. Dopamine paints a photograph (`Background_Green.jpg`) edge
+ * to edge and blurs it, then draws translucent grey panels on top. Everything below is
+ * read from `Themes.plist` and `DONavigationController.m`:
+ *
+ *   image Background_Green.jpg, ScaleAspectFill, blur 18
+ *   actionMenuColor 723F3F3F -> rgb(63,63,63) at 0x72/255 = 45% alpha   (cards/buttons)
+ *   windowColor     994C4C4C -> rgb(76,76,76) at 0x99/255 = 60% alpha   (settings window)
+ *
+ * The iOS code multiplies the menu colour's alpha by a factor per use site
+ * (`menuColorWithAlpha:`), so the constants below are that colour at the alphas the
+ * call sites pass, not new colours.
  */
 object DopamineColors {
-    /** Background: not pure black, which would flatten the cards into the wallpaper. */
-    val Background = Color(0xFF08080A)
 
-    /** The menu / action card. */
-    val Menu = Color(0xFF1C1C1E)
+    /** `actionMenuColor` = #3F3F3F at 45%. The card and button fill. */
+    val Menu = Color(0x723F3F3F)
 
-    /** A slightly lighter grey for the jailbreak card at the bottom. */
-    val MenuRaised = Color(0xFF2C2C2E)
+    /** The same colour raised for things that must read above a card (e.g. a pressed row). */
+    val MenuRaised = Color(0x8C3F3F3F)
 
-    /** Hairline separators inside a card. */
-    val Separator = Color(0xFF38383A)
+    /** `windowColor` = #4C4C4C at 60%. The settings/about sheet. */
+    val Window = Color(0x994C4C4C)
 
-    val TextPrimary = Color(0xFFFFFFFF)
-    val TextSecondary = Color(0xFF8E8E93)
+    /** Hairlines: the iOS separator is white at 10-15%. */
+    val Separator = Color(0x1AFFFFFF)
 
-    /** The tick / success green. */
-    val Success = Color(0xFF30D158)
+    /** `mainSubtitleString`: solid white. */
+    val TextPrimary = Color.White
 
-    val Warning = Color(0xFFFF9F0A)
+    /** `secondarySubtitleString`: white at 60%. */
+    val TextSecondary = Color(0x99FFFFFF)
+
+    /** Button titles use `baseForegroundColor = white`, dimmed to 75% when inactive. */
+    val TextDisabled = Color(0xBF7A7A7A)
+
+    /** The switch tint in DOPSListController: rgb(71,169,135). */
+    val Success = Color(0xFF47A987)
+
+    /** Destructive text on the remove-jailbreak row. */
     val Danger = Color(0xFFFF453A)
+
+    /** The warning glyph in the About notice. */
+    val Warning = Color(0xFFFFB340)
 }
 
-private val darkScheme = darkColorScheme(
-    primary = DopamineColors.TextPrimary,
-    onPrimary = DopamineColors.Background,
-    background = DopamineColors.Background,
-    onBackground = DopamineColors.TextPrimary,
-    surface = DopamineColors.Menu,
-    onSurface = DopamineColors.TextPrimary,
-    surfaceVariant = DopamineColors.MenuRaised,
-    onSurfaceVariant = DopamineColors.TextSecondary,
-)
-
-private val lightScheme = lightColorScheme(
-    primary = Color(0xFF1C1C1E),
-    background = Color(0xFFF2F2F7),
-    surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFE5E5EA),
-)
-
 /**
- * Typography.
+ * Wraps the whole app.
  *
- * The top wordmark is a very large heavy sans — iOS uses the system font, and Roboto is the closest
- * Android equivalent, so the default family is kept and only the weight and size are forced.
+ * The background lives here rather than in each screen so switching screens cannot flash
+ * a different colour, and so the blackout overlay can cover it without fighting it.
  */
-private val DopamineTypography = Typography(
-    displayLarge = TextStyle(
-        fontSize = 44.sp,
-        fontWeight = FontWeight.Black,
-        letterSpacing = (-1.5).sp,
-    ),
-    titleMedium = TextStyle(
-        fontSize = 17.sp,
-        fontWeight = FontWeight.SemiBold,
-    ),
-    bodyMedium = TextStyle(
-        fontSize = 15.sp,
-        fontWeight = FontWeight.Normal,
-    ),
-    labelSmall = TextStyle(
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Medium,
-    ),
-)
-
 @Composable
-fun DopamineTheme(
-    /*
-     * Always dark. Dopamine has no light appearance on iOS, and the darker cards are what makes the
-     * white "Jailbreak" card read as the primary action; honouring the system light theme would
-     * invert the one thing the interface is built around.
-     */
-    darkTheme: Boolean = true,
-    content: @Composable () -> Unit,
-) {
+fun DopamineTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (darkTheme) darkScheme else lightScheme,
-        typography = DopamineTypography,
+        colorScheme = darkColorScheme(
+            background = Color.Black,
+            surface = DopamineColors.Menu,
+            onBackground = DopamineColors.TextPrimary,
+            onSurface = DopamineColors.TextPrimary,
+        ),
+        typography = Typography(),
         content = content,
     )
+}
+
+/**
+ * The themed background: the iOS photo, scaled to fill, blurred, sitting behind everything.
+ *
+ * The source asset is 3000x2000, so it is decoded once and remembered; blurring is a
+ * render-time effect and costs nothing on the bitmap itself. `scale(1.08)` hides the
+ * softening of the edges that a blur otherwise leaves visible.
+ */
+@Composable
+fun ThemeBackground(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val bitmap = remember {
+        BitmapFactory.decodeResource(context.resources, R.drawable.bg_green)
+    }
+    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(1.08f)
+                    .blur(18.dp),
+            )
+        }
+    }
 }
