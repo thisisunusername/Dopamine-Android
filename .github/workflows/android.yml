@@ -7,6 +7,12 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+# Without this the default GITHUB_TOKEN is read-only and creating the release below
+# fails with "Resource not accessible by integration" (403). The build itself does not
+# need anything else.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
