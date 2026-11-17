@@ -35,7 +35,12 @@ android {
      */
     signingConfigs {
         create("release") {
-            storeFile = file("signing/dopamine-release.jks")
+            /*
+             * Resolved against the project root, not this module: `file(...)` inside
+             * app/build.gradle.kts is relative to app/, and the keystore lives at the repository
+             * root so it is not tied to one module's layout.
+             */
+            storeFile = rootProject.file("signing/dopamine-release.jks")
             storePassword = System.getenv("DOPAMINE_STORE_PASSWORD")
                 ?: (project.findProperty("dopamineStorePassword") as String?)
                 ?: ""
