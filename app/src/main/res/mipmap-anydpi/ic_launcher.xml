@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fallback for anything that does not understand <adaptive-icon> (and for launchers that
+  read the plain mipmap entry): the same gradient square with the ring drawn on top.
+  minSdk is 28 so this is belt-and-braces, but it costs one file.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/ic_launcher_background" />
+    <item android:drawable="@drawable/ic_launcher_foreground" />
+</layer-list>
