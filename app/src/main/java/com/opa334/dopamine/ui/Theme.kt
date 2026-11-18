@@ -1,5 +1,6 @@
 package com.opa334.dopamine.ui
 
+import android.content.res.Resources
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,6 +14,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -115,9 +117,29 @@ fun ThemeBackground(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val theme = LocalDopamineTheme.current
 
-    // Decoded once per theme and remembered; asImageBitmap() is a zero-copy view over the pixels.
-    val bitmap: ImageBitmap? = remember(theme) {
-        BitmapFactory.decodeResource(context.resources, theme.background)?.asImageBitmap()
+    /*
+     * Decoded once, at the size it is blurred at.
+     *
+     * This used to decode the full-resolution JPEG and put Modifier.blur() on it. Modifier.blur()
+     * re-runs its gaussian pass every time the layer is redrawn, and this layer sits under the
+     * whole app, so every log line and every progress tick re-blurred a full-screen 40dp image.
+     * The main thread never got a clean frame, which is why the notification shade could not be
+     * pulled down while a run was going - the symptom reported as "the progress still cannot be
+     * dragged".
+     *
+     * The image is now decoded at a small size (inSampleSize) and blurred at that size. A gaussian
+     * of radius r at half resolution is the same picture as radius 2r at full resolution, so the
+     * filter runs on roughly a sixteenth of the pixels for an identical result, and the cost stops
+     * mattering.
+     */
+    val bitmap: ImageBitmap? = remember(theme, uiScaleBucket()) {
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sampleSizeFor(context.resources, theme.background, maxEdgePx = 540)
+        }
+        runCatching {
+            BitmapFactory.decodeResource(context.resources, theme.background, opts)
+                ?.asImageBitmap()
+        }.getOrNull()
     }
 
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
@@ -129,8 +151,27 @@ fun ThemeBackground(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxSize()
                     .scale(1.08f)
-                    .blur(theme.blurPoints.dp),
+                    .blur(theme.blurPoints.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded),
             )
         }
     }
 }
+
+/**
+ * The smallest power-of-two `inSampleSize` that keeps the decoded image under [maxEdgePx].
+ *
+ * Measured from the encoded bounds rather than assumed, so replacing a background with a larger
+ * photograph cannot silently reintroduce the full-resolution decode.
+ */
+private fun sampleSizeFor(res: Resources, resId: Int, maxEdgePx: Int): Int {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeResource(res, resId, bounds)
+    val longest = maxOf(bounds.outWidth, bounds.outHeight)
+    if (longest <= 0) return 1
+    var sample = 1
+    while ((longest / sample) > maxEdgePx) sample *= 2
+    return sample
+}
+
+/** Recomputes the background only when the display density class changes, not on rotation. */
+private fun uiScaleBucket(): Int = Resources.getSystem().displayMetrics.densityDpi

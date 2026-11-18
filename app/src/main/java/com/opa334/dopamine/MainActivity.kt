@@ -43,7 +43,7 @@ import com.opa334.dopamine.ui.SettingsScreen
 import com.opa334.dopamine.ui.ThemeBackground
 import com.opa334.dopamine.ui.ThemeIcon
 import com.opa334.dopamine.ui.ThemePickerScreen
-import com.opa334.dopamine.ui.UserspaceBlink
+import com.opa334.dopamine.ui.DopamineTheme
 import com.opa334.dopamine.ui.applyEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -103,34 +103,19 @@ class MainActivity : ComponentActivity() {
         ThemeIcon.applyStored(this)
 
         setContent {
-            DopamineTheme(theme = appTheme) {
-                DopamineApp()
-            }
+            /*
+             * The theme is applied inside the composition, not outside it.
+             *
+             * An earlier revision held it as an activity field and wrapped this call in
+             * `DopamineTheme(theme = appTheme)`. Changing that field invalidated the whole
+             * `setContent` lambda, which rebuilt `DopamineApp` from scratch - and rebuilding it
+             * discards every `remember`, so `screen` fell back to Main and the app appeared to
+             * crash back to the home screen on every theme change. Hoisting the state here and
+             * reading it in a composable keeps the recomposition scoped to the theme wrapper
+             * instead of the entire app.
+             */
+            DopamineApp()
         }
-    }
-
-    /**
-     * The theme currently in effect, held here so [DopamineTheme] can wrap the whole app.
-     *
-     * It is a plain mutableState rather than being read inside the composable so that a change from
-     * Settings recomposes the theme wrapper itself - which is what re-paints every screen, the
-     * background photo and the cards together.
-     */
-    private var appTheme by mutableStateOf(DopamineThemeKey.fallback)
-
-    /** Read by [DopamineApp] so a change in Settings reaches the theme wrapper above it. */
-    internal fun currentTheme(): DopamineThemeKey = appTheme
-
-    /** Applies a theme: repaints the app and switches the launcher icon. */
-    internal fun applyTheme(theme: DopamineThemeKey) {
-        appTheme = theme
-        JailbreakState.setTheme(this, theme.key)
-        ThemeIcon.apply(this, theme)
-    }
-
-    /** Re-reads the persisted theme, used once during composition. */
-    internal fun restoreTheme() {
-        appTheme = DopamineThemeKey.fromKey(JailbreakState.theme(this))
     }
 }
 
@@ -142,8 +127,39 @@ private enum class Overlay { None, Wizard, Blackout, Userspace, SpringBoard }
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 private fun DopamineApp() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val activity = context as? MainActivity
+    /*
+     * The theme lives here, at the top of the composition, and the whole app is wrapped in it.
+     *
+     * It has to sit above the screens to repaint all of them, but it must not sit above the
+     * composition itself: when it did, changing it rebuilt DopamineApp and wiped its remembered
+     * state, so the settings screen fell back to Main on every theme change. Declaring it here and
+     * wrapping the content keeps the state and recomposes only downwards.
+     */
+    val context = LocalContext.current
+
+    var theme by remember { mutableStateOf(DopamineThemeKey.fromKey(JailbreakState.theme(context))) }
+
+    DopamineTheme(theme = theme) {
+        DopamineScreens(
+            theme = theme,
+            onThemeChange = { picked ->
+                theme = picked
+                JailbreakState.setTheme(context, picked)
+                // Repaints the launcher icon; the package manager does the actual swap.
+                ThemeIcon.apply(context, picked)
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+private fun DopamineScreens(
+    theme: DopamineThemeKey,
+    onThemeChange: (DopamineThemeKey) -> Unit,
+) {
+    val context = LocalContext.current
+    val activity = context as? Activity
     val scope = rememberCoroutineScope()
 
     // Screens are derived from persisted state on every recomposition, so leaving the app and
@@ -157,14 +173,11 @@ private fun DopamineApp() {
     var ui by remember { mutableStateOf(MainUiState()) }
 
     /*
-     * Theme and boot-logo preferences.
+     * Boot-logo preferences.
      *
-     * These are held here as well as in SharedPreferences because the UI has to react to a change
-     * immediately; the stored copy is what survives a restart. The theme is additionally pushed up
-     * to the activity (see [MainActivity.applyTheme]) because DopamineTheme wraps DopamineApp -
-     * repainting everything means recomposing from above, not below.
+     * Held here as well as in SharedPreferences because the UI has to react to a change
+     * immediately; the stored copy is what survives a restart.
      */
-    var theme by remember { mutableStateOf(DopamineThemeKey.fromKey(JailbreakState.theme(context))) }
     var bootlogoEnabled by remember { mutableStateOf(JailbreakState.bootlogoEnabled(context)) }
     var customBootlogoEnabled by remember { mutableStateOf(JailbreakState.customBootlogoEnabled(context)) }
     var customBootlogoPath by remember { mutableStateOf(JailbreakState.customBootlogoPath(context)) }
@@ -257,7 +270,23 @@ private fun DopamineApp() {
                             // what Dopamine does rather than re-running the exploit.
                             scope.launch {
                                 overlay = Overlay.Userspace
-                                JailbreakEngine.restartUserspace(context)
+                                /*
+                                 * The restart is awaited before the overlay is dismissed, not
+                                 * fired and forgotten.
+                                 *
+                                 * The blackout sequence matters because it hides the moment the
+                                 * daemon is killed and replaced. Starting the restart without
+                                 * waiting let the sequence finish first on a fast run, so the app
+                                 * came back on screen while the userspace was still being torn
+                                 * down - the blink then looked disconnected from the action it was
+                                 * supposed to cover. Awaiting it keeps the two in step, and the
+                                 * overlay is cleared here rather than from the animation callback.
+                                 */
+                                runCatching { JailbreakEngine.restartUserspace(context) }
+                                refreshState()
+                                // Cleared here, not by the animation: the blink has to outlast the
+                                // restart it is covering.
+                                overlay = Overlay.None
                             }
                         } else if (!JailbreakState.hasEverJailbroken(context) &&
                             JailbreakState.packageManager(context) == null
@@ -290,7 +319,14 @@ private fun DopamineApp() {
                     onRestartUserspace = {
                         scope.launch {
                             overlay = Overlay.Userspace
-                            JailbreakEngine.restartUserspace(context)
+                            // Same ordering as the button: the blink covers the restart, so the
+                            // restart has to finish while the blink is still on screen.
+                            runCatching { JailbreakEngine.restartUserspace(context) }
+                            refreshState()
+                            // The restart is done, so the blackout can end. The sequence never
+                            // dismisses itself: it would otherwise finish first and uncover a
+                            // userspace that was still being restarted.
+                            overlay = Overlay.None
                         }
                     },
                     onSettings = { screen = Screen.Settings },
@@ -389,12 +425,16 @@ private fun DopamineApp() {
                 Screen.Themes -> ThemePickerScreen(
                     selected = theme,
                     onSelect = { picked ->
-                        theme = picked
-                        // Pushed up to the activity as well: the theme wrapper sits above this
-                        // composable, so only it can repaint the background and cards.
-                        activity?.applyTheme(picked)
-                        // The settings list shows the current name, so the choice is visible
-                        // without backing out; the picker stays open to try another.
+                        /*
+                         * One call does everything: it stores the choice, swaps the launcher icon,
+                         * and notifies the theme wrapper above, which repaints the background and
+                         * the cards without touching this screen's state. Nothing here has to be
+                         * pushed up to the activity any more - doing that rebuilt the composition
+                         * and dropped the user back on the main screen.
+                         */
+                        onThemeChange(picked)
+                        // The picker stays open so another theme can be tried immediately; the
+                        // settings list behind it already shows the new name.
                     },
                     onBack = { screen = Screen.Settings },
                 )
@@ -443,8 +483,8 @@ private fun DopamineApp() {
              */
             BlackoutSequence(
                 sequence = when {
-                    // Boot logo off: one lying Apple, no blinking at all.
-                    !bootlogoEnabled -> BootSequence.Lying
+                    // Boot logo off: no artwork at all, just the black screen.
+                    !bootlogoEnabled -> BootSequence.Off
                     // Custom logo on with a picture present: that picture blinks, then Apple.
                     customBootlogoEnabled && !customBootlogoPath.isNullOrEmpty() ->
                         BootSequence.Custom(customBootlogoPath)
@@ -459,10 +499,29 @@ private fun DopamineApp() {
         }
 
         if (overlay == Overlay.Userspace) {
-            UserspaceBlink(
+            /*
+             * Restarting userspace blinks the same artwork as a fresh run.
+             *
+             * This used to call a separate UserspaceBlink that hard-coded the Dopamine wordmark,
+             * which is why a custom boot logo was ignored on restart while working on first run:
+             * the setting was read only by the other composable. Both paths now go through one
+             * sequence, so whatever the boot-logo settings say is what gets drawn.
+             *
+             * The animation no longer clears the overlay itself. The restart is what the blink is
+             * covering, so the overlay has to stay up until the restart has actually finished;
+             * dismissing it from the animation callback ended the blackout first whenever the
+             * daemon took longer to come back, which showed the main screen over a userspace that
+             * was still restarting. The restart coroutine clears it instead.
+             */
+            BlackoutSequence(
+                sequence = when {
+                    !bootlogoEnabled -> BootSequence.Off
+                    customBootlogoEnabled && !customBootlogoPath.isNullOrEmpty() ->
+                        BootSequence.Custom(customBootlogoPath)
+                    else -> BootSequence.Themed(theme)
+                },
                 onFinished = {
-                    overlay = Overlay.None
-                    refreshState()
+                    // Nothing to do: see above. Kept so the call site stays explicit.
                 },
             )
         }
