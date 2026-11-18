@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -30,8 +31,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -341,6 +344,27 @@ private fun LogPanel(
     rows: List<LogRow>,
     progress: Float,
 ) {
+    /*
+     * The log scrolls, and it scrolls itself.
+     *
+     * It used to be a plain Column that grew to fit every row. There was nothing to drag because
+     * there was nothing scrolling: the whole log was always on screen, and as rows arrived the
+     * panel got taller, pushed the weighted spacer down to zero and squeezed the jailbreak button
+     * towards the bottom edge. What looked like "cannot drag the progress" was a panel with no
+     * scroll state at all.
+     *
+     * It now has a bounded height and its own ScrollState, and every new row scrolls it to the
+     * bottom, so the newest step is always the one you can see without touching anything.
+     */
+    val scroll = rememberScrollState()
+
+    LaunchedEffect(rows.size) {
+        // Scroll after the new row has been measured, not before: animateScrollTo would target a
+        // maxValue that does not include it yet and stop short of the bottom.
+        withFrameNanos { }
+        scroll.animateScrollTo(scroll.maxValue)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -359,23 +383,32 @@ private fun LogPanel(
             Spacer(Modifier.height(8.dp))
         }
 
-        rows.forEach { row ->
-            /*
-             * One composable per row, keyed by label.
-             *
-             * Every step emits a Started and a Finished event, and each one replaces the whole
-             * rows list. Without a key and a separate composable, Compose cannot tell that only
-             * one row changed, so it rebuilt all of them - cheap here, but it runs while the user
-             * is trying to interact with the screen, and the point is to leave the frame time
-             * alone. With the key, only the row that changed is recomposed.
-             */
-            key(row.label) {
-                LogLine(row)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                // Bounded so the panel cannot grow into the button. 180 dp fits the device line
+                // plus four or five steps, which is more than the run has.
+                .heightIn(max = 180.dp)
+                .verticalScroll(scroll),
+        ) {
+            rows.forEach { row ->
+                /*
+                 * One composable per row, keyed by label.
+                 *
+                 * Every step emits a Started and a Finished event, and each one replaces the whole
+                 * rows list. Without a key and a separate composable, Compose cannot tell that only
+                 * one row changed, so it rebuilt all of them - cheap here, but it runs while the
+                 * user is trying to interact with the screen, and the point is to leave the frame
+                 * time alone. With the key, only the row that changed is recomposed.
+                 */
+                key(row.label) {
+                    LogLine(row)
+                }
             }
         }
 
         // Progress bar, mirroring the thin bar under the log on iOS.
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(8.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()

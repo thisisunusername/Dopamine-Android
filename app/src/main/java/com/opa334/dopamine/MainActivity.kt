@@ -233,6 +233,18 @@ private fun DopamineScreens(
                     if (event is StepEvent.Done) {
                         if (event.ok) {
                             overlay = Overlay.Blackout
+                            /*
+                             * Update the state now, not after the blink.
+                             *
+                             * refreshState() used to run only on the failure branch, so on
+                             * success `jailbroken` stayed false and `busy` stayed true until the
+                             * activity was recreated. The visible effect was that the blink played
+                             * once, the screen came back still showing "Jailbreak", and tapping it
+                             * again re-ran the whole flow - which is why the blink only appeared
+                             * to work after leaving and re-entering the app. The daemon really was
+                             * up; the UI just had not been told.
+                             */
+                            refreshState()
                         } else {
                             overlay = Overlay.None
                             refreshState()

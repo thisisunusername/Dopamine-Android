@@ -216,36 +216,36 @@ fun BlackoutSequence(
         when (sequence) {
             is BootSequence.Themed, is BootSequence.Custom -> {
                 /*
-                 * Timings roughly doubled.
+                 * Long enough to actually watch.
                  *
-                 * At the previous speeds the whole thing was over before the eye caught it: two
-                 * 220 ms fades with 160 ms holds read as a single flicker, and the Apple then
-                 * appeared and left so quickly it looked like a glitch rather than a boot screen.
-                 * The blink is the only feedback that the jailbreak took effect, so it is worth
-                 * spending a couple of seconds on.
+                 * The previous timing was about six seconds in total, which still read as "it
+                 * flashed once and was gone": the fades are what carry the effect, and at 420 ms
+                 * each the eye mostly catches the hold in between. The mark now blinks three times
+                 * with a full second of visibility, the Apple stays up for two and a half seconds,
+                 * and the whole sequence takes roughly nine seconds.
                  */
-                delay(600L)
+                delay(800L)
 
-                repeat(2) {
-                    markAlpha.animateTo(1f, tween(420, easing = LinearEasing))
-                    delay(320L)
-                    markAlpha.animateTo(0f, tween(420, easing = LinearEasing))
-                    delay(260L)
+                repeat(3) {
+                    markAlpha.animateTo(1f, tween(550, easing = LinearEasing))
+                    delay(1_000L)
+                    markAlpha.animateTo(0f, tween(550, easing = LinearEasing))
+                    delay(350L)
                 }
 
+                delay(500L)
+
+                appleAlpha.animateTo(1f, tween(1_600, easing = LinearEasing))
+                delay(2_500L)
+                appleAlpha.animateTo(0f, tween(900, easing = LinearEasing))
+
                 delay(400L)
-
-                appleAlpha.animateTo(1f, tween(1_300, easing = LinearEasing))
-                delay(1_400L)
-                appleAlpha.animateTo(0f, tween(700, easing = LinearEasing))
-
-                delay(300L)
             }
 
             is BootSequence.Off -> {
                 // Nothing to show: "boot logo disabled" means the black screen simply stays.
                 // Still held so the transition is not instantaneous - it is a pause, not a flash.
-                delay(2_400L)
+                delay(3_000L)
             }
         }
 
