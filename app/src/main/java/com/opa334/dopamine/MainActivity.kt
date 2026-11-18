@@ -212,6 +212,7 @@ private fun DopamineApp() {
                 userspaceMarkDone = userspaceMarkDone,
                 userspaceAppleAlpha = userspaceAppleAlpha,
                 pendingRunAfterWizard = pendingRunAfterWizard,
+                onPendingRunConsumed = { pendingRunAfterWizard = false },
                 bootlogoEnabled = bootlogoEnabled,
                 customBootlogoEnabled = customBootlogoEnabled,
                 customBootlogoPath = customBootlogoPath,
@@ -283,6 +284,7 @@ private fun DopamineScreens(
     userspaceMarkDone: Boolean,
     userspaceAppleAlpha: Animatable<Float, AnimationVector1D>,
     pendingRunAfterWizard: Boolean,
+    onPendingRunConsumed: () -> Unit,
     bootlogoEnabled: Boolean,
     customBootlogoEnabled: Boolean,
     customBootlogoPath: String?,
@@ -394,7 +396,8 @@ private fun DopamineScreens(
      */
     LaunchedEffect(pendingRunAfterWizard) {
         if (pendingRunAfterWizard) {
-            pendingRunAfterWizard = false
+            // Cleared through the owner of the flag, not here: it is passed down as a value.
+            onPendingRunConsumed()
             startRun()
         }
     }
