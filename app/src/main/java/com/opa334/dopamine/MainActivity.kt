@@ -5,6 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -28,6 +31,7 @@ import com.opa334.dopamine.core.JailbreakEngine
 import com.opa334.dopamine.core.JailbreakState
 import com.opa334.dopamine.core.StepEvent
 import com.opa334.dopamine.ui.AboutScreen
+import com.opa334.dopamine.ui.AppleStage
 import com.opa334.dopamine.ui.BlackoutSequence
 import com.opa334.dopamine.ui.BootSequence
 import com.opa334.dopamine.ui.BootlogoStore
@@ -44,6 +48,7 @@ import com.opa334.dopamine.ui.PackageManagerScreen
 import com.opa334.dopamine.ui.SettingsScreen
 import com.opa334.dopamine.ui.ThemeBackground
 import com.opa334.dopamine.ui.ThemeIcon
+import com.opa334.dopamine.ui.ThemedMarkBlink
 import com.opa334.dopamine.ui.ThemePickerScreen
 import com.opa334.dopamine.ui.applyEvent
 import kotlinx.coroutines.Dispatchers
@@ -142,17 +147,90 @@ private fun DopamineApp() {
 
     var theme by remember { mutableStateOf(DopamineThemeKey.fromKey(JailbreakState.theme(context))) }
 
+    /*
+     * The overlay state lives here, one level above the screens.
+     *
+     * It has to: the overlays are drawn as a sibling of the screens, so the screens cannot own
+     * the flag that decides whether they are covered. Hoisting it also means an animation tick
+     * (the Apple's alpha) recomposes only this scope, not the screen tree underneath.
+     */
+    var overlay by remember { mutableStateOf(Overlay.None) }
+    var userspaceMarkDone by remember { mutableStateOf(false) }
+    /*
+     * The Apple's opacity for "Restart userspace".
+     *
+     * An Animatable rather than a Boolean because the restart coroutine animates it after the
+     * userspace has actually come back - the Apple is what the system shows while it comes up, so
+     * it cannot be on the same timer as the blink that covers the restart itself.
+     */
+    val userspaceAppleAlpha = remember { Animatable(0f) }
+
+    /*
+     * What the boot animation should draw, for both entry points.
+     *
+     * Boot logo off means no artwork at all - the switch deletes the logo on iOS and the system
+     * paints its own, so there is nothing for the app to show.
+     */
+    val bootSequence = remember(bootlogoEnabled, customBootlogoEnabled, theme) {
+        when {
+            !bootlogoEnabled -> BootSequence.Off
+            customBootlogoEnabled && !JailbreakState.customBootlogoPath(context).isNullOrEmpty() ->
+                BootSequence.Custom(JailbreakState.customBootlogoPath(context))
+            else -> BootSequence.Themed(theme)
+        }
+    }
+
     DopamineTheme(theme = theme) {
-        DopamineScreens(
-            theme = theme,
-            onThemeChange = { picked ->
-                theme = picked
-                // Stored as its plist identifier, which is what the original preference holds.
-                JailbreakState.setTheme(context, picked.key)
-                // Repaints the launcher icon; the package manager does the actual swap.
-                ThemeIcon.apply(context, picked)
-            },
-        )
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            DopamineScreens(
+                theme = theme,
+                overlay = overlay,
+                bootSequence = bootSequence,
+                // The callbacks the screens and the overlays share.
+                onStartBlackout = { overlay = Overlay.Blackout },
+                // The first run's wizard is raised by the screens alone: the run it answers for
+                // is started there.
+                onStartWizard = { overlay = Overlay.Wizard },
+                onStartUserspace = { overlay = Overlay.Userspace },
+                onStartSpringBoard = { overlay = Overlay.SpringBoard },
+                onClearOverlay = { overlay = Overlay.None },
+                onMarkReset = { userspaceMarkDone = false },
+                userspaceMarkDone = userspaceMarkDone,
+                userspaceAppleAlpha = userspaceAppleAlpha,
+                pendingRunAfterWizard = pendingRunAfterWizard,
+                onThemeChange = { picked ->
+                    theme = picked
+                    // Stored as its plist identifier, which is what the original preference holds.
+                    JailbreakState.setTheme(context, picked.key)
+                    // Repaints the launcher icon; the package manager does the actual swap.
+                    ThemeIcon.apply(context, picked)
+                },
+            )
+
+            /*
+             * The overlays sit on the theme's root, next to the screens, not inside them.
+             *
+             * While one is up it is the only thing painted, so the black stages are black: the
+             * main screen's blurred photo is not underneath them to show through a fade.
+             */
+            Overlays(
+                overlay = overlay,
+                bootSequence = bootSequence,
+                userspaceMarkDone = userspaceMarkDone,
+                userspaceAppleAlpha = userspaceAppleAlpha,
+                onMarkDone = { userspaceMarkDone = true },
+                onWizardCancel = { overlay = Overlay.None },
+                onWizardFinished = { pm, password ->
+                    JailbreakState.setPackageManager(context, pm)
+                    JailbreakState.setSudoPassword(context, password)
+                    overlay = Overlay.None
+                    // The run is started by the screens, which own the log; the request travels
+                    // as state and is consumed by a LaunchedEffect there.
+                    pendingRunAfterWizard = true
+                },
+                onBlackoutFinished = { overlay = Overlay.None },
+            )
+        }
     }
 }
 
@@ -160,6 +238,22 @@ private fun DopamineApp() {
 @Composable
 private fun DopamineScreens(
     theme: DopamineThemeKey,
+    /*
+     * The overlay flag is owned by DopamineApp, because the overlays are drawn beside these
+     * screens rather than on top of them in the same tree. The screens still need to read it and
+     * to raise it, so it is passed in as state plus the three transitions they cause.
+     */
+    overlay: Overlay,
+    bootSequence: BootSequence,
+    onStartBlackout: () -> Unit,
+    onStartWizard: () -> Unit,
+    onStartUserspace: () -> Unit,
+    onStartSpringBoard: () -> Unit,
+    onClearOverlay: () -> Unit,
+    onMarkReset: () -> Unit,
+    userspaceMarkDone: Boolean,
+    userspaceAppleAlpha: Animatable,
+    pendingRunAfterWizard: Boolean,
     onThemeChange: (DopamineThemeKey) -> Unit,
 ) {
     val context = LocalContext.current
@@ -180,7 +274,11 @@ private fun DopamineScreens(
     var packageManager by remember { mutableStateOf(JailbreakState.packageManager(context)) }
 
     var screen by remember { mutableStateOf(Screen.Main) }
-    var overlay by remember { mutableStateOf(Overlay.None) }
+    /*
+     * Set when the wizard finishes: the answers were saved by the overlay above, and the run they
+     * were collected for is started here, where the log and the engine call live.
+     */
+    var pendingRunAfterWizard by remember { mutableStateOf(false) }
     var ui by remember { mutableStateOf(MainUiState()) }
 
     /*
@@ -256,9 +354,9 @@ private fun DopamineScreens(
                          */
                         ui = ui.copy(expanded = false)
                         if (event.ok) {
-                            overlay = Overlay.Blackout
+                            onStartBlackout()
                         } else {
-                            overlay = Overlay.None
+                            onClearOverlay()
                         }
                         // onEvent is a plain callback, not a suspend one, and refreshState now has
                         // to hop to the IO dispatcher, so it is launched rather than called.
@@ -266,6 +364,18 @@ private fun DopamineScreens(
                     }
                 },
             )
+        }
+    }
+
+    /*
+     * The wizard's answers are saved by DopamineApp (it owns the wizard overlay), and the run that
+     * follows has to be started here, where the log lives. The flag is what carries the request
+     * across; it is cleared as soon as the run has been handed off.
+     */
+    LaunchedEffect(pendingRunAfterWizard) {
+        if (pendingRunAfterWizard) {
+            pendingRunAfterWizard = false
+            startRun()
         }
     }
 
@@ -318,7 +428,7 @@ private fun DopamineScreens(
                             // Already jailbroken: the card means "restart userspace", which is
                             // what Dopamine does rather than re-running the exploit.
                             scope.launch {
-                                overlay = Overlay.Userspace
+                                onStartUserspace()
                                 /*
                                  * The restart is awaited before the overlay is dismissed, not
                                  * fired and forgotten.
@@ -335,7 +445,7 @@ private fun DopamineScreens(
                                 refreshState()
                                 // Cleared here, not by the animation: the blink has to outlast the
                                 // restart it is covering.
-                                overlay = Overlay.None
+                                onClearOverlay()
                             }
                         } else if (!JailbreakState.hasEverJailbroken(context) &&
                             JailbreakState.packageManager(context) == null
@@ -351,7 +461,7 @@ private fun DopamineScreens(
                              * after a removal, which is the "no password, no package manager"
                              * second run.
                              */
-                            overlay = Overlay.Wizard
+                            onStartWizard()
                         } else {
                             startRun()
                         }
@@ -368,23 +478,42 @@ private fun DopamineScreens(
                          * part that reads as a respring) and the app comes back on its own.
                          */
                         scope.launch {
-                            overlay = Overlay.SpringBoard
+                            onStartSpringBoard()
                             delay(3_000L)
-                            overlay = Overlay.None
+                            onClearOverlay()
                             refreshState()
                         }
                     },
                     onRestartUserspace = {
+                        /*
+                         * The Apple is the part that has to land after the restart, not before it.
+                         *
+                         * This used to fire the restart and the whole blink at the same time, so
+                         * the sequence played on schedule while the daemon was still coming back:
+                         * the Apple appeared over a userspace that was not there yet, and the
+                         * overlay was removed the moment the animation ended. Splitting the two
+                         * lets each part happen when it is actually true:
+                         *
+                         *   mark blinks (the restart runs underneath it)
+                         *   the userspace is back
+                         *   the Apple fade-in begins
+                         *
+                         * The Apple is held up afterwards and only taken down once it has been
+                         * on screen long enough to read as the system coming up.
+                         */
                         scope.launch {
-                            overlay = Overlay.Userspace
-                            // Same ordering as the button: the blink covers the restart, so the
-                            // restart has to finish while the blink is still on screen.
+                            onStartUserspace()
+                            userspaceAppleAlpha.snapTo(0f)
+                            onMarkReset()
                             runCatching { JailbreakEngine.restartUserspace(context) }
+                            // Wait for the mark to finish its two blinks before showing the Apple:
+                            // covering the restart is the whole reason the mark is there.
+                            while (!userspaceMarkDone) delay(50L)
                             refreshState()
-                            // The restart is done, so the blackout can end. The sequence never
-                            // dismisses itself: it would otherwise finish first and uncover a
-                            // userspace that was still being restarted.
-                            overlay = Overlay.None
+                            userspaceAppleAlpha.animateTo(1f, tween(1_600, easing = LinearEasing))
+                            delay(2_500L)
+                            userspaceAppleAlpha.animateTo(0f, tween(900, easing = LinearEasing))
+                            onClearOverlay()
                         }
                     },
                     onSettings = { screen = Screen.Settings },
@@ -537,89 +666,88 @@ private fun DopamineScreens(
                 )
             }
         }
+    }
+}
 
-        // ---- Overlays ----
+/**
+ * The full-screen overlays: the first-run wizard, the boot animation, and the black screens.
+ *
+ * Drawn by `DopamineApp` as a sibling of the screens rather than nested in them, so that while an
+ * overlay is up it is the only thing painted - the black stages have to be black, not black over
+ * a blurred photo. Everything it needs is passed in; it owns no state of its own, which is what
+ * keeps the screen underneath from recomposing when the animation ticks.
+ */
+@Composable
+private fun Overlays(
+    overlay: Overlay,
+    bootSequence: BootSequence,
+    userspaceMarkDone: Boolean,
+    userspaceAppleAlpha: Animatable,
+    onMarkDone: () -> Unit,
+    onWizardCancel: () -> Unit,
+    onWizardFinished: (packageManager: String, sudoPassword: String) -> Unit,
+    onBlackoutFinished: () -> Unit,
+) {
+    if (overlay == Overlay.Wizard) {
+        // The wizard draws over the main screen, so cancelling returns to a screen that
+        // already looks right instead of a blank transition.
+        Box(Modifier.fillMaxSize().background(Color(0xCC000000))) {
+            ThemeBackground()
+            Box(Modifier.fillMaxSize().background(Color(0x99000000)))
+            FirstRunWizard(
+                onCancel = onWizardCancel,
+                onFinished = onWizardFinished,
+            )
+        }
+    }
 
-        if (overlay == Overlay.Wizard) {
-            // The wizard draws over the main screen, so cancelling returns to a screen that
-            // already looks right instead of a blank transition.
-            Box(Modifier.fillMaxSize().background(Color(0xCC000000))) {
-                ThemeBackground()
-                Box(Modifier.fillMaxSize().background(Color(0x99000000)))
-                FirstRunWizard(
-                    onCancel = { overlay = Overlay.None },
-                    onFinished = { pm, password ->
-                        JailbreakState.setPackageManager(context, pm)
-                        JailbreakState.setSudoPassword(context, password)
-                        packageManager = pm
-                        overlay = Overlay.None
-                        startRun()
-                    },
+    if (overlay == Overlay.Blackout) {
+        /*
+         * The blink is the "respring" moment, but the app must survive it.
+         *
+         * This used to call onFinish() and close the activity, copying what iOS does - where the
+         * process really is replaced and SpringBoard comes back. On Android there is no
+         * SpringBoard to come back, so the only visible effect was that tapping "Jailbreak" made
+         * the app disappear a few seconds later, which reads exactly like a crash and is what got
+         * reported as one. Nothing crashed: no FATAL EXCEPTION is ever logged, the activity is
+         * simply finished by its own code.
+         *
+         * The screen now goes black, blinks, and returns to the main screen in its jailbroken
+         * state. That is the observable outcome the user actually wants from the button.
+         */
+        BlackoutSequence(
+            sequence = bootSequence,
+            onFinished = onBlackoutFinished,
+        )
+    }
+
+    if (overlay == Overlay.Userspace) {
+        /*
+         * Restarting userspace blinks the same artwork as a fresh run, but split in two.
+         *
+         * The mark is what covers the restart, and the Apple is what the system shows while it
+         * comes up - so the mark plays first, the restart is awaited, and only then does the
+         * Apple fade in. Both are opaque full-screen layers; nothing behind them can show through
+         * while they are on screen.
+         */
+        if (bootSequence is BootSequence.Off) {
+            // Boot logo off: black, no artwork, and no Apple either - exactly what the sequence
+            // does on a fresh run.
+            Box(Modifier.fillMaxSize().background(Color.Black))
+        } else {
+            if (!userspaceMarkDone) {
+                ThemedMarkBlink(
+                    sequence = bootSequence,
+                    onFinished = onMarkDone,
                 )
             }
+            // Always drawn over the mark, on its own black fill; fully transparent until the
+            // restart has finished and the mark is gone.
+            AppleStage(alpha = userspaceAppleAlpha.value)
         }
+    }
 
-        if (overlay == Overlay.Blackout) {
-            /*
-             * The blink is the "respring" moment, but the app must survive it.
-             *
-             * This used to call onFinish() and close the activity, copying what iOS does - where
-             * the process really is replaced and SpringBoard comes back. On Android there is no
-             * SpringBoard to come back, so the only visible effect was that tapping "Jailbreak"
-             * made the app disappear a few seconds later, which reads exactly like a crash and is
-             * what got reported as one. Nothing crashed: no FATAL EXCEPTION is ever logged, the
-             * activity is simply finished by its own code.
-             *
-             * The screen now goes black, blinks, and returns to the main screen in its jailbroken
-             * state. That is the observable outcome the user actually wants from the button.
-             */
-            BlackoutSequence(
-                sequence = when {
-                    // Boot logo off: no artwork at all, just the black screen.
-                    !bootlogoEnabled -> BootSequence.Off
-                    // Custom logo on with a picture present: that picture blinks, then Apple.
-                    customBootlogoEnabled && !customBootlogoPath.isNullOrEmpty() ->
-                        BootSequence.Custom(customBootlogoPath)
-                    // Otherwise the theme ring blinks, then Apple.
-                    else -> BootSequence.Themed(theme)
-                },
-                onFinished = {
-                    overlay = Overlay.None
-                    scope.launch { refreshState() }
-                },
-            )
-        }
-
-        if (overlay == Overlay.Userspace) {
-            /*
-             * Restarting userspace blinks the same artwork as a fresh run.
-             *
-             * This used to call a separate UserspaceBlink that hard-coded the Dopamine wordmark,
-             * which is why a custom boot logo was ignored on restart while working on first run:
-             * the setting was read only by the other composable. Both paths now go through one
-             * sequence, so whatever the boot-logo settings say is what gets drawn.
-             *
-             * The animation no longer clears the overlay itself. The restart is what the blink is
-             * covering, so the overlay has to stay up until the restart has actually finished;
-             * dismissing it from the animation callback ended the blackout first whenever the
-             * daemon took longer to come back, which showed the main screen over a userspace that
-             * was still restarting. The restart coroutine clears it instead.
-             */
-            BlackoutSequence(
-                sequence = when {
-                    !bootlogoEnabled -> BootSequence.Off
-                    customBootlogoEnabled && !customBootlogoPath.isNullOrEmpty() ->
-                        BootSequence.Custom(customBootlogoPath)
-                    else -> BootSequence.Themed(theme)
-                },
-                onFinished = {
-                    // Nothing to do: see above. Kept so the call site stays explicit.
-                },
-            )
-        }
-
-        if (overlay == Overlay.SpringBoard) {
-            Box(Modifier.fillMaxSize().background(Color.Black))
-        }
+    if (overlay == Overlay.SpringBoard) {
+        Box(Modifier.fillMaxSize().background(Color.Black))
     }
 }

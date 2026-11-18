@@ -260,13 +260,20 @@ fun BlackoutSequence(
     }
 
     /*
-     * The Apple stage is its own full-screen layer, and it is black.
+     * One layer, black, for everything.
      *
-     * The mark and the Apple used to share one black Box: the ring faded out and the Apple then
-     * faded in over whatever was left behind. That worked only because the background was uniform.
-     * Now that the mark fills the screen with the theme colour, the Apple has to be drawn on its
-     * own opaque layer - a fade to black first, then the glyph - or it would sit on the theme
-     * tint. The Apple is the moment the themed logo is gone, so the screen behind it is black.
+     * Two things went wrong when the mark and the Apple were siblings in a single Box:
+     *
+     *  - the mark is a full-screen layer whose alpha is animated, so while it fades out it is
+     *    still drawn across the whole screen. The Apple was drawn on top of it in the same Box,
+     *    which means every frame of the Apple's fade-in had a few percent of the theme colour
+     *    underneath. The glyph, being white on a filled disc, showed that as a grey tint;
+     *  - `graphicsLayer { alpha = }` does not remove a layer from what the device composites -
+     *    both were on screen at once.
+     *
+     * The screen is now explicitly black for the entire Apple stage: the frame starts with a
+     * black fill, the mark is only drawn while it is actually visible, and the Apple is drawn
+     * over the black fill once the mark's alpha has reached zero.
      */
     Box(
         modifier = modifier
@@ -274,27 +281,37 @@ fun BlackoutSequence(
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {
-        when (sequence) {
-            is BootSequence.Themed -> {
-                /*
-                 * The theme's own ring, not the app icon.
-                 *
-                 * What blinks on iOS is the boot logo built by `-[DOTheme generateBootLogo]`: the
-                 * theme background with `DopamineLogo` - the notched ring - drawn centred on top.
-                 */
-                BootRing(theme = sequence.theme, alpha = markAlpha.value)
-            }
+        // A full-screen opaque black fill, redrawn on every frame of the animation, so nothing
+        // behind this composable (the main screen's blurred photo) can ever show through.
+        Box(Modifier.fillMaxSize().background(Color.Black))
 
-            is BootSequence.Custom -> {
-                CustomBootImage(path = sequence.imagePath, alpha = markAlpha.value)
-            }
+        val markVisible = markAlpha.value > 0f
+        if (markVisible) {
+            when (sequence) {
+                is BootSequence.Themed -> {
+                    /*
+                     * The theme's own ring, not the app icon.
+                     *
+                     * What blinks on iOS is the boot logo built by `-[DOTheme generateBootLogo]`:
+                     * the theme background with `DopamineLogo` - the notched ring - drawn
+                     * centred on top. Both parts come from one image there, so the colour and the
+                     * ring are never separated; here the colour is the theme's and the ring is
+                     * the artwork, painted by the same composable so they fade as one thing.
+                     */
+                    BootRing(theme = sequence.theme, alpha = markAlpha.value)
+                }
 
-            is BootSequence.Off -> {
-                // No artwork at all, so there is nothing to place in the centre.
+                is BootSequence.Custom -> {
+                    CustomBootImage(path = sequence.imagePath, alpha = markAlpha.value)
+                }
+
+                is BootSequence.Off -> {
+                    // No artwork at all, so there is nothing to place in the centre.
+                }
             }
         }
 
-        // Drawn last, over the mark, on this black layer.
+        // Drawn last, over the black fill, and only after the mark is fully gone.
         if (sequence !is BootSequence.Off) {
             AppleGlyph(
                 modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },
@@ -311,12 +328,17 @@ fun BlackoutSequence(
  * circle, which made the blink read as a small coloured dot in the middle of black; the theme
  * colour is the background of the boot screen, so it has to cover it.
  *
- * The screen colour is `windowColor` at full opacity, not `actionMenuColor`. `actionMenuColor` is
- * the fill of the menu card on top of a photograph and it carries its own alpha (45-37%), so
- * drawing it over black simply produced a dark grey - the same dull shade for every theme, which
- * is why the full-screen colour did not look like the theme's. `windowColor` is the theme's own
- * tint; its alpha (60%) is a property of how iOS layers it over the photo, and dropping that is
- * what makes each theme's colour actually visible here.
+ * The screen colour is the theme's own colour at full opacity. Two candidates were tried and both
+ * were wrong for the same reason - the plist stores each colour with an alpha that describes how
+ * it is layered over the blurred photo, not how the colour itself looks:
+ *
+ *  - `actionMenuColor` at 45% over black produced #1C1C1C, an almost black screen;
+ *  - `windowColor` is #4C4C4C for the default theme - a neutral grey, not a colour at all.
+ *
+ * What the theme is *for* is the hue: `actionMenuColor` carries one per theme (#3F3F3F for the
+ * default, #610C71 for ElleKit, #0C2571 for Deep Blue Sky, #560808 for Blood Sky, #150C71 for
+ * Desert Dusk). Dropping its alpha and keeping the RGB is what makes the blink show the theme's
+ * colour full screen instead of a grey that looks the same in all five.
  */
 @Composable
 private fun BootRing(
@@ -326,8 +348,8 @@ private fun BootRing(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(theme.windowColor.copy(alpha = 1f))
-            .graphicsLayer { this.alpha = alpha },
+            .graphicsLayer { this.alpha = alpha }
+            .background(theme.actionMenuColor.copy(alpha = 1f)),
         contentAlignment = Alignment.Center,
     ) {
         /*
