@@ -220,9 +220,14 @@ fun BlackoutSequence(
                  *
                  * The previous timing was about six seconds in total, which still read as "it
                  * flashed once and was gone": the fades are what carry the effect, and at 420 ms
-                 * each the eye mostly catches the hold in between. The mark now blinks three times
-                 * with a full second of visibility, the Apple stays up for two and a half seconds,
-                 * and the whole sequence takes roughly nine seconds.
+                 * each the eye mostly catches the hold in between. The mark now blinks twice with a
+                 * full second of visibility, the Apple stays up for two and a half seconds, and the
+                 * whole sequence takes roughly nine seconds.
+                 *
+                 * After the second blink the mark is snapped to fully transparent and held on
+                 * black before the Apple appears. Fading the theme colour out and the Apple in at
+                 * the same time put the Apple on a tinted screen; the black gap is what guarantees
+                 * the Apple is drawn on black, which is the only background it belongs on.
                  */
                 delay(800L)
 
@@ -233,7 +238,9 @@ fun BlackoutSequence(
                     delay(350L)
                 }
 
-                delay(500L)
+                // The screen is black from here on.
+                markAlpha.snapTo(0f)
+                delay(700L)
 
                 appleAlpha.animateTo(1f, tween(1_600, easing = LinearEasing))
                 delay(2_500L)
@@ -252,6 +259,15 @@ fun BlackoutSequence(
         onFinished()
     }
 
+    /*
+     * The Apple stage is its own full-screen layer, and it is black.
+     *
+     * The mark and the Apple used to share one black Box: the ring faded out and the Apple then
+     * faded in over whatever was left behind. That worked only because the background was uniform.
+     * Now that the mark fills the screen with the theme colour, the Apple has to be drawn on its
+     * own opaque layer - a fade to black first, then the glyph - or it would sit on the theme
+     * tint. The Apple is the moment the themed logo is gone, so the screen behind it is black.
+     */
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -267,23 +283,23 @@ fun BlackoutSequence(
                  * theme background with `DopamineLogo` - the notched ring - drawn centred on top.
                  */
                 BootRing(theme = sequence.theme, alpha = markAlpha.value)
-                AppleGlyph(
-                    modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },
-                    size = 104.dp,
-                )
             }
 
             is BootSequence.Custom -> {
                 CustomBootImage(path = sequence.imagePath, alpha = markAlpha.value)
-                AppleGlyph(
-                    modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },
-                    size = 104.dp,
-                )
             }
 
             is BootSequence.Off -> {
                 // No artwork at all, so there is nothing to place in the centre.
             }
+        }
+
+        // Drawn last, over the mark, on this black layer.
+        if (sequence !is BootSequence.Off) {
+            AppleGlyph(
+                modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },
+                size = 104.dp,
+            )
         }
     }
 }
@@ -295,9 +311,12 @@ fun BlackoutSequence(
  * circle, which made the blink read as a small coloured dot in the middle of black; the theme
  * colour is the background of the boot screen, so it has to cover it.
  *
- * The colour is `actionMenuColor` rather than the theme photograph: at boot-screen size the photo
- * reads as noise, and what is wanted is the theme's own colour with the ring on it, so each theme
- * blinks its own shade.
+ * The screen colour is `windowColor` at full opacity, not `actionMenuColor`. `actionMenuColor` is
+ * the fill of the menu card on top of a photograph and it carries its own alpha (45-37%), so
+ * drawing it over black simply produced a dark grey - the same dull shade for every theme, which
+ * is why the full-screen colour did not look like the theme's. `windowColor` is the theme's own
+ * tint; its alpha (60%) is a property of how iOS layers it over the photo, and dropping that is
+ * what makes each theme's colour actually visible here.
  */
 @Composable
 private fun BootRing(
@@ -307,7 +326,7 @@ private fun BootRing(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(theme.actionMenuColor.copy(alpha = 1f))
+            .background(theme.windowColor.copy(alpha = 1f))
             .graphicsLayer { this.alpha = alpha },
         contentAlignment = Alignment.Center,
     ) {
@@ -352,8 +371,22 @@ private fun CustomBootImage(
                 .graphicsLayer { this.alpha = alpha },
         )
     } else {
-        // No picture, or it could not be decoded: fall back to the ring rather than a blank frame.
-        BootRing(theme = LocalDopamineTheme.current, alpha = alpha)
+        /*
+         * No picture, or it could not be decoded: fall back to the ring rather than a blank frame.
+         *
+         * The ring that is drawn here is only the artwork, without the full-screen theme colour
+         * that BootRing paints behind it. A picked picture is a 160 dp image on black, and
+         * "custom logo on but nothing picked" should look like the same kind of thing - not
+         * switch to a full-screen tint that the real picture would never produce.
+         */
+        Image(
+            painter = painterResource(R.drawable.dopamine_ring),
+            contentDescription = "Dopamine",
+            modifier = Modifier
+                .size(240.dp)
+                .graphicsLayer { this.alpha = alpha },
+            contentScale = ContentScale.Fit,
+        )
     }
 }
 
