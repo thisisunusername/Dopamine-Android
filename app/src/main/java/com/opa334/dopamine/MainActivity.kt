@@ -266,7 +266,13 @@ private fun DopamineScreens(
         ) { target ->
             when (target) {
                 Screen.Main -> MainScreen(
-                    state = ui.copy(jailbroken = jailbroken, packageManager = packageManager),
+                    jailbroken = jailbroken,
+                    busy = ui.busy,
+                    title = ui.title,
+                    expanded = ui.expanded,
+                    deviceLine = ui.deviceLine,
+                    rows = ui.rows,
+                    progress = ui.progress,
                     onJailbreak = {
                         if (jailbroken) {
                             // Already jailbroken: the card means "restart userspace", which is

@@ -215,28 +215,37 @@ fun BlackoutSequence(
     LaunchedEffect(sequence) {
         when (sequence) {
             is BootSequence.Themed, is BootSequence.Custom -> {
-                delay(450L)
+                /*
+                 * Timings roughly doubled.
+                 *
+                 * At the previous speeds the whole thing was over before the eye caught it: two
+                 * 220 ms fades with 160 ms holds read as a single flicker, and the Apple then
+                 * appeared and left so quickly it looked like a glitch rather than a boot screen.
+                 * The blink is the only feedback that the jailbreak took effect, so it is worth
+                 * spending a couple of seconds on.
+                 */
+                delay(600L)
 
                 repeat(2) {
-                    markAlpha.animateTo(1f, tween(220, easing = LinearEasing))
-                    delay(160L)
-                    markAlpha.animateTo(0f, tween(220, easing = LinearEasing))
-                    delay(100L)
+                    markAlpha.animateTo(1f, tween(420, easing = LinearEasing))
+                    delay(320L)
+                    markAlpha.animateTo(0f, tween(420, easing = LinearEasing))
+                    delay(260L)
                 }
 
-                delay(250L)
+                delay(400L)
 
-                appleAlpha.animateTo(1f, tween(900, easing = LinearEasing))
-                delay(700L)
-                appleAlpha.animateTo(0f, tween(400, easing = LinearEasing))
+                appleAlpha.animateTo(1f, tween(1_300, easing = LinearEasing))
+                delay(1_400L)
+                appleAlpha.animateTo(0f, tween(700, easing = LinearEasing))
 
-                delay(200L)
+                delay(300L)
             }
 
             is BootSequence.Off -> {
                 // Nothing to show: "boot logo disabled" means the black screen simply stays.
-                // Deliberately no delay loop and no fade - there is no artwork to fade.
-                delay(900L)
+                // Still held so the transition is not instantaneous - it is a pause, not a flash.
+                delay(2_400L)
             }
         }
 

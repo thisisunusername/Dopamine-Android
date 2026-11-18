@@ -30,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,7 +87,25 @@ private val CardCorner = 14.dp
  */
 @Composable
 fun MainScreen(
-    state: MainUiState,
+    /*
+     * Passed field by field rather than as the whole MainUiState.
+     *
+     * The run emits an event for every log line and every progress tick, and each one produced a
+     * new MainUiState. Handing that object straight to MainScreen meant the whole screen was
+     * recomposed - header, action card, jailbreak button, background - several times a second
+     * while a run was going. The device has other things to do with its frame time, so the screen
+     * was reported as unresponsive: the log kept moving but nothing could be interacted with.
+     *
+     * With plain parameters, Compose skips every composable whose inputs did not change, and only
+     * the log panel and the progress bar are rebuilt.
+     */
+    jailbroken: Boolean,
+    busy: Boolean,
+    title: String,
+    expanded: Boolean,
+    deviceLine: String,
+    rows: List<LogRow>,
+    progress: Float,
     onJailbreak: () -> Unit,
     onRestartSpringBoard: () -> Unit,
     onRestartUserspace: () -> Unit,
@@ -138,14 +157,14 @@ fun MainScreen(
                 ActionRow(
                     Icons.Filled.Refresh,
                     stringResource(R.string.menu_restart_springboard),
-                    state.jailbroken,
+                    jailbroken,
                     onRestartSpringBoard,
                 )
                 Separator()
                 ActionRow(
                     Icons.Filled.RestartAlt,
                     stringResource(R.string.menu_restart_userspace),
-                    state.jailbroken,
+                    jailbroken,
                     onRestartUserspace,
                 )
                 Separator()
@@ -157,23 +176,23 @@ fun MainScreen(
             // ---- Log, only while a run is in progress ----
             // AnimatedVisibility is deliberately not used: the panel is only on screen during a
             // run, and the button below it must not move while rows arrive.
-            if (state.expanded) {
-                LogPanel(state)
+            if (expanded) {
+                LogPanel(deviceLine = deviceLine, rows = rows, progress = progress)
                 Spacer(Modifier.height(14.dp))
             }
 
             // ---- Jailbreak button ----
             JailbreakButton(
-                title = state.title.ifEmpty {
+                title = title.ifEmpty {
                     stringResource(
-                        if (state.jailbroken) R.string.action_jailbroken else R.string.action_jailbreak,
+                        if (jailbroken) R.string.action_jailbroken else R.string.action_jailbreak,
                     )
                 },
-                jailbroken = state.jailbroken,
-                busy = state.busy,
+                jailbroken = jailbroken,
+                busy = busy,
                 // Once the device is jailbroken the row has nothing left to do, so it goes grey
                 // and stops accepting taps rather than offering a second run that would fail.
-                enabled = !state.busy && !state.jailbroken,
+                enabled = !busy && !jailbroken,
                 onClick = onJailbreak,
             )
 
@@ -317,7 +336,11 @@ private fun JailbreakButton(
  * the daemon pid) and those are printed here in a monospace block.
  */
 @Composable
-private fun LogPanel(state: MainUiState) {
+private fun LogPanel(
+    deviceLine: String,
+    rows: List<LogRow>,
+    progress: Float,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -326,9 +349,9 @@ private fun LogPanel(state: MainUiState) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         // Device line first: it is the same information the header would carry on iOS.
-        if (state.deviceLine.isNotEmpty()) {
+        if (deviceLine.isNotEmpty()) {
             Text(
-                text = state.deviceLine,
+                text = deviceLine,
                 color = DopamineColors.TextSecondary,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -336,48 +359,19 @@ private fun LogPanel(state: MainUiState) {
             Spacer(Modifier.height(8.dp))
         }
 
-        state.rows.forEach { row ->
-            Row(verticalAlignment = Alignment.Top) {
-                Text(
-                    text = when (row.state) {
-                        RowState.Done -> "✓"
-                        RowState.Running -> "›"
-                        RowState.Pending -> "·"
-                    },
-                    color = when (row.state) {
-                        RowState.Done -> DopamineColors.Success
-                        RowState.Running -> DopamineColors.TextPrimary
-                        RowState.Pending -> DopamineColors.TextSecondary
-                    },
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.width(14.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = row.label,
-                        color = if (row.state == RowState.Pending) {
-                            DopamineColors.TextSecondary
-                        } else {
-                            DopamineColors.TextPrimary
-                        },
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                    // The detail line is the whole point of the toggle: only present when the
-                    // engine was asked for detail.
-                    row.detail?.takeIf { it.isNotEmpty() }?.let {
-                        Text(
-                            text = "  $it",
-                            color = DopamineColors.TextSecondary,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                    }
-                }
+        rows.forEach { row ->
+            /*
+             * One composable per row, keyed by label.
+             *
+             * Every step emits a Started and a Finished event, and each one replaces the whole
+             * rows list. Without a key and a separate composable, Compose cannot tell that only
+             * one row changed, so it rebuilt all of them - cheap here, but it runs while the user
+             * is trying to interact with the screen, and the point is to leave the frame time
+             * alone. With the key, only the row that changed is recomposed.
+             */
+            key(row.label) {
+                LogLine(row)
             }
-            Spacer(Modifier.height(6.dp))
         }
 
         // Progress bar, mirroring the thin bar under the log on iOS.
@@ -391,13 +385,64 @@ private fun LogPanel(state: MainUiState) {
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(state.progress.coerceIn(0f, 1f))
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
                     .height(3.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(DopamineColors.TextPrimary),
             )
         }
     }
+}
+
+/**
+ * One line of the log: the state marker, the label, and the detail block when there is one.
+ *
+ * Split out of [LogPanel] so a row that changes is the only thing that recomposes; see the call
+ * site for why that matters here.
+ */
+@Composable
+private fun LogLine(row: LogRow) {
+    Row(verticalAlignment = Alignment.Top) {
+        Text(
+            text = when (row.state) {
+                RowState.Done -> "✓"
+                RowState.Running -> "›"
+                RowState.Pending -> "·"
+            },
+            color = when (row.state) {
+                RowState.Done -> DopamineColors.Success
+                RowState.Running -> DopamineColors.TextPrimary
+                RowState.Pending -> DopamineColors.TextSecondary
+            },
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.width(14.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = row.label,
+                color = if (row.state == RowState.Pending) {
+                    DopamineColors.TextSecondary
+                } else {
+                    DopamineColors.TextPrimary
+                },
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+            // The detail line is the whole point of the toggle: only present when the engine was
+            // asked for detail.
+            row.detail?.takeIf { it.isNotEmpty() }?.let {
+                Text(
+                    text = "  $it",
+                    color = DopamineColors.TextSecondary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
 }
 
 /** Drives the log from [StepEvent]s so the screen holds no hidden state. */

@@ -73,7 +73,7 @@ object JailbreakEngine {
 
         val steps = mutableListOf<ExploitStep>()
 
-        steps += ExploitStep(s(R.string.step_download_kernel), 900L) { ctx ->
+        steps += ExploitStep(s(R.string.step_download_kernel), 2_200L) { ctx ->
             // The only thing this build can legitimately "download" is the device's own kernel
             // string; faking a payload fetch would be a lie with no upside.
             val kernel = ctx.device.kernel.ifEmpty { "unknown" }
@@ -93,7 +93,7 @@ object JailbreakEngine {
             }
         }
 
-        steps += ExploitStep(s(R.string.step_find_address), 900L) { ctx ->
+        steps += ExploitStep(s(R.string.step_find_address), 2_200L) { ctx ->
             /*
              * A real exploit walks the kernel's Mach-O load commands to locate its symbols, then
              * computes slide-adjusted addresses. None of that can happen without an exploit, but
@@ -166,7 +166,7 @@ object JailbreakEngine {
                 R.string.step_exploit_kernel_fmt,
                 exploit ?: JailbreakState.selectedExploit(context) ?: DEFAULT_EXPLOIT,
             ),
-            durationMs = 1_400L,
+            durationMs = 3_200L,
         ) { ctx ->
             // The step the real thing would spend its time in. Here it performs the only
             // privileged-looking work an unprivileged app can do: create its own staging area.
@@ -181,7 +181,7 @@ object JailbreakEngine {
             }
         }
 
-        steps += ExploitStep(s(R.string.step_prepare_environment), 800L) {
+        steps += ExploitStep(s(R.string.step_prepare_environment), 1_800L) {
             val shell = Daemon.resolveShell(context) ?: "none"
             if (!detailed) {
                 "ok"
@@ -191,7 +191,7 @@ object JailbreakEngine {
             }
         }
 
-        steps += ExploitStep(s(R.string.step_install_package_manager), 700L) {
+        steps += ExploitStep(s(R.string.step_install_package_manager), 1_500L) {
             val pm = JailbreakState.packageManager(context)
                 ?: context.getString(R.string.step_package_manager_unset)
             if (!detailed) {
@@ -202,7 +202,7 @@ object JailbreakEngine {
             }
         }
 
-        steps += ExploitStep(s(R.string.step_start_daemon), 600L) {
+        steps += ExploitStep(s(R.string.step_start_daemon), 1_300L) {
             val pid = Daemon.start(context)
             if (pid == null) {
                 // Surfaced as a failure by the caller; returning the reason keeps it in the log.
