@@ -131,7 +131,6 @@ fun SettingsScreen(
     hidden: Boolean,
     selectedExploit: String,
     theme: DopamineThemeKey,
-    onThemeChange: (DopamineThemeKey) -> Unit,
     bootlogoEnabled: Boolean,
     onBootlogoEnabledChange: (Boolean) -> Unit,
     customBootlogoEnabled: Boolean,
@@ -144,8 +143,6 @@ fun SettingsScreen(
     onOpenThemes: () -> Unit,
     onBack: () -> Unit,
 ) {
-    val palette = dopaminePalette
-
     DetailScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
         /*
          * Exploits first, as on iOS. The list is the set of exploits Dopamine actually ships
