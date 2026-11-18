@@ -341,7 +341,7 @@ fun BlackoutSequence(
  * colour full screen instead of a grey that looks the same in all five.
  */
 @Composable
-private fun BootRing(
+internal fun BootRing(
     theme: DopamineThemeKey,
     alpha: Float,
 ) {
@@ -373,7 +373,7 @@ private fun BootRing(
  * the process dies, and the boot sequence must not depend on something it cannot re-open.
  */
 @Composable
-private fun CustomBootImage(
+internal fun CustomBootImage(
     path: String?,
     alpha: Float,
 ) {

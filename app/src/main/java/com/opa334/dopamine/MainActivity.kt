@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.ExperimentalAnimationApi
@@ -157,6 +158,19 @@ private fun DopamineApp() {
     var overlay by remember { mutableStateOf(Overlay.None) }
     var userspaceMarkDone by remember { mutableStateOf(false) }
     /*
+     * Boot-logo preferences, owned here because the overlays read them: the boot sequence is
+     * chosen above the screens, so the switches that decide it have to live at the same level.
+     * The screens below edit them through the setters they are given.
+     */
+    var bootlogoEnabled by remember { mutableStateOf(JailbreakState.bootlogoEnabled(context)) }
+    var customBootlogoEnabled by remember { mutableStateOf(JailbreakState.customBootlogoEnabled(context)) }
+    var customBootlogoPath by remember { mutableStateOf(JailbreakState.customBootlogoPath(context)) }
+    /*
+     * Set by the wizard overlay, consumed by DopamineScreens: the answers are collected here (this
+     * composable owns the overlay) but the run has to be started down there (it owns the log).
+     */
+    var pendingRunAfterWizard by remember { mutableStateOf(false) }
+    /*
      * The Apple's opacity for "Restart userspace".
      *
      * An Animatable rather than a Boolean because the restart coroutine animates it after the
@@ -198,6 +212,21 @@ private fun DopamineApp() {
                 userspaceMarkDone = userspaceMarkDone,
                 userspaceAppleAlpha = userspaceAppleAlpha,
                 pendingRunAfterWizard = pendingRunAfterWizard,
+                bootlogoEnabled = bootlogoEnabled,
+                customBootlogoEnabled = customBootlogoEnabled,
+                customBootlogoPath = customBootlogoPath,
+                onBootlogoEnabledChange = {
+                    bootlogoEnabled = it
+                    JailbreakState.setBootlogoEnabled(context, it)
+                },
+                onCustomBootlogoEnabledChange = { enabled ->
+                    customBootlogoEnabled = enabled
+                    JailbreakState.setCustomBootlogoEnabled(context, enabled)
+                    // The stored copy is deleted when the switch goes off, so the row must stop
+                    // naming a file that no longer exists.
+                    customBootlogoPath = JailbreakState.customBootlogoPath(context)
+                },
+                onCustomBootlogoPathChange = { customBootlogoPath = it },
                 onThemeChange = { picked ->
                     theme = picked
                     // Stored as its plist identifier, which is what the original preference holds.
@@ -252,8 +281,14 @@ private fun DopamineScreens(
     onClearOverlay: () -> Unit,
     onMarkReset: () -> Unit,
     userspaceMarkDone: Boolean,
-    userspaceAppleAlpha: Animatable,
+    userspaceAppleAlpha: Animatable<Float, AnimationVector1D>,
     pendingRunAfterWizard: Boolean,
+    bootlogoEnabled: Boolean,
+    customBootlogoEnabled: Boolean,
+    customBootlogoPath: String?,
+    onBootlogoEnabledChange: (Boolean) -> Unit,
+    onCustomBootlogoEnabledChange: (Boolean) -> Unit,
+    onCustomBootlogoPathChange: (String?) -> Unit,
     onThemeChange: (DopamineThemeKey) -> Unit,
 ) {
     val context = LocalContext.current
@@ -274,24 +309,9 @@ private fun DopamineScreens(
     var packageManager by remember { mutableStateOf(JailbreakState.packageManager(context)) }
 
     var screen by remember { mutableStateOf(Screen.Main) }
-    /*
-     * Set when the wizard finishes: the answers were saved by the overlay above, and the run they
-     * were collected for is started here, where the log and the engine call live.
-     */
-    var pendingRunAfterWizard by remember { mutableStateOf(false) }
     var ui by remember { mutableStateOf(MainUiState()) }
 
-    /*
-     * Boot-logo preferences.
-     *
-     * Held here as well as in SharedPreferences because the UI has to react to a change
-     * immediately; the stored copy is what survives a restart.
-     */
-    var bootlogoEnabled by remember { mutableStateOf(JailbreakState.bootlogoEnabled(context)) }
-    var customBootlogoEnabled by remember { mutableStateOf(JailbreakState.customBootlogoEnabled(context)) }
-    var customBootlogoPath by remember { mutableStateOf(JailbreakState.customBootlogoPath(context)) }
-
-    // The selected exploit is a real preference: it survives leaving the app and is the name the
+        // The selected exploit is a real preference: it survives leaving the app and is the name the
     // settings screen shows on its one-line entry point. Default is the first (recommended) one.
     var selectedExploit by remember {
         mutableStateOf(
@@ -533,26 +553,15 @@ private fun DopamineScreens(
                     theme = theme,
                     onOpenThemes = { screen = Screen.Themes },
                     bootlogoEnabled = bootlogoEnabled,
-                    onBootlogoEnabledChange = {
-                        bootlogoEnabled = it
-                        JailbreakState.setBootlogoEnabled(context, it)
-                    },
+                    onBootlogoEnabledChange = onBootlogoEnabledChange,
                     customBootlogoEnabled = customBootlogoEnabled,
-                    onCustomBootlogoEnabledChange = { enabled ->
-                        customBootlogoEnabled = enabled
-                        JailbreakState.setCustomBootlogoEnabled(context, enabled)
-                        // The stored copy is deleted when the switch goes off, so the row must
-                        // stop naming a file that no longer exists.
-                        customBootlogoPath = JailbreakState.customBootlogoPath(context)
-                    },
+                    onCustomBootlogoEnabledChange = onCustomBootlogoEnabledChange,
                     customBootlogoPath = customBootlogoPath,
                     onPickBootlogoImage = {
                         host?.pickBootlogoImage { uri ->
                             scope.launch {
                                 val saved = BootlogoStore.copyInto(context, uri)
-                                if (saved != null) {
-                                    customBootlogoPath = saved
-                                }
+                                if (saved != null) onCustomBootlogoPathChange(saved)
                             }
                         }
                     },
@@ -682,7 +691,7 @@ private fun Overlays(
     overlay: Overlay,
     bootSequence: BootSequence,
     userspaceMarkDone: Boolean,
-    userspaceAppleAlpha: Animatable,
+    userspaceAppleAlpha: Animatable<Float, AnimationVector1D>,
     onMarkDone: () -> Unit,
     onWizardCancel: () -> Unit,
     onWizardFinished: (packageManager: String, sudoPassword: String) -> Unit,
