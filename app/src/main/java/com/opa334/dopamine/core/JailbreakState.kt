@@ -121,12 +121,28 @@ object JailbreakState {
         prefs(context).edit().putString(KEY_PKG_MANAGER, value).apply()
     }
 
+    /**
+     * Forgets the chosen package manager.
+     *
+     * Called by "Remove Jailbreak": with the bootstrap gone there is no package manager installed,
+     * and the wizard decides whether to run by checking this value. Leaving it set made the second
+     * jailbreak skip the wizard entirely, so the run never asked where to install anything.
+     */
+    fun clearPackageManager(context: Context) {
+        prefs(context).edit().remove(KEY_PKG_MANAGER).apply()
+    }
+
     /** The sudo password the user typed on first run. Stored locally only. */
     fun sudoPassword(context: Context): String? =
         prefs(context).getString(KEY_SUDO_PASSWORD, null)
 
     fun setSudoPassword(context: Context, value: String) {
         prefs(context).edit().putString(KEY_SUDO_PASSWORD, value).apply()
+    }
+
+    /** Forgets the sudo password, for the same reason as [clearPackageManager]. */
+    fun clearSudoPassword(context: Context) {
+        prefs(context).edit().remove(KEY_SUDO_PASSWORD).apply()
     }
 
     /** Whether the user wants every exploit step echoed into the log view. */

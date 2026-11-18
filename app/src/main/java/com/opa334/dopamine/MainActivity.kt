@@ -40,6 +40,7 @@ import com.opa334.dopamine.ui.FirstRunWizard
 import com.opa334.dopamine.ui.LogRow
 import com.opa334.dopamine.ui.MainScreen
 import com.opa334.dopamine.ui.MainUiState
+import com.opa334.dopamine.ui.PackageManagerScreen
 import com.opa334.dopamine.ui.SettingsScreen
 import com.opa334.dopamine.ui.ThemeBackground
 import com.opa334.dopamine.ui.ThemeIcon
@@ -121,7 +122,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { Main, Settings, Exploits, Themes, About }
+private enum class Screen { Main, Settings, Exploits, Themes, PackageManager, About }
 
 /** Full-screen things drawn on top of the current screen. */
 private enum class Overlay { None, Wizard, Blackout, Userspace, SpringBoard }
@@ -339,8 +340,17 @@ private fun DopamineScreens(
                         } else if (!JailbreakState.hasEverJailbroken(context) &&
                             JailbreakState.packageManager(context) == null
                         ) {
-                            // First run: ask for the package manager and sudo password now, not
-                            // at launch, and only then start.
+                            /*
+                             * First run: ask for the package manager and sudo password now, not
+                             * at launch, and only then start.
+                             *
+                             * Read from the store rather than from the `packageManager` field this
+                             * screen was composed with. "Remove Jailbreak" clears the stored value
+                             * from a coroutine, and the field only catches up on the next refresh;
+                             * checking the field meant this branch could still be skipped right
+                             * after a removal, which is the "no password, no package manager"
+                             * second run.
+                             */
                             overlay = Overlay.Wizard
                         } else {
                             startRun()
@@ -388,12 +398,6 @@ private fun DopamineScreens(
                         JailbreakState.setDetailedLog(context, it)
                     },
                     packageManager = packageManager,
-                    onPackageManagerChange = {
-                        packageManager = it
-                        JailbreakState.setPackageManager(context, it)
-                    },
-                    sudoPassword = JailbreakState.sudoPassword(context),
-                    onSudoPasswordChange = { JailbreakState.setSudoPassword(context, it) },
                     jailbroken = jailbroken,
                     hidden = JailbreakState.isHidden(context),
                     selectedExploit = selectedExploit,
@@ -451,14 +455,54 @@ private fun DopamineScreens(
                         scope.launch {
                             JailbreakEngine.removeJailbreak(context)
                             JailbreakState.setHidden(context, false)
-                            refreshState()
-                            // Removing the jailbreak takes everything with it, so the settings
-                            // screen has nothing left to act on.
-                            screen = Screen.Main
+                            /*
+                             * Forget the wizard's answers as well.
+                             *
+                             * The next run is a first run in the only sense that matters: there
+                             * is no bootstrap, no package manager installed, and no sudo
+                             * password in effect. Keeping the stored package manager meant the
+                             * wizard was skipped on the next tap - it checks
+                             * `packageManager == null` - so the user was dropped straight into a
+                             * run that never asked where to install anything, which is the
+                             * "no password and no package manager" behaviour this fixes.
+                             */
+                            JailbreakState.clearPackageManager(context)
+                            JailbreakState.clearSudoPassword(context)
                         }
+                        /*
+                         * Removal closes the app.
+                         *
+                         * Until now the screen simply went back to Main with the exploit still
+                         * marked as done and the daemon gone, so the app sat there in a state it
+                         * cannot describe. A jailbreak that has been removed has nothing left
+                         * running, and the honest thing is to leave: the next launch starts from
+                         * the beginning, which is what "Remove Jailbreak" means on iOS too - it
+                         * reboots the device.
+                         *
+                         * finish() rather than killProcess: this activity owns no other state,
+                         * and letting the system tear it down is the supported way out.
+                         */
+                        context.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_MAIN)
+                                .addCategory(android.content.Intent.CATEGORY_HOME)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                        (context as? MainActivity)?.finish()
                     },
                     onBack = { screen = Screen.Main },
                     onOpenExploits = { screen = Screen.Exploits },
+                    onOpenPackageManager = { screen = Screen.PackageManager },
+                )
+
+                Screen.PackageManager -> PackageManagerScreen(
+                    packageManager = packageManager,
+                    onPackageManagerChange = {
+                        packageManager = it
+                        JailbreakState.setPackageManager(context, it)
+                    },
+                    sudoPassword = JailbreakState.sudoPassword(context),
+                    onSudoPasswordChange = { JailbreakState.setSudoPassword(context, it) },
+                    onBack = { screen = Screen.Settings },
                 )
 
                 Screen.Exploits -> ExploitPickerScreen(

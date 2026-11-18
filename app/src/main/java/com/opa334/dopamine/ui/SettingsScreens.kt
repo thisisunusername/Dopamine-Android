@@ -124,9 +124,6 @@ fun SettingsScreen(
     detailedLog: Boolean,
     onDetailedLogChange: (Boolean) -> Unit,
     packageManager: String?,
-    onPackageManagerChange: (String) -> Unit,
-    sudoPassword: String?,
-    onSudoPasswordChange: (String) -> Unit,
     jailbroken: Boolean,
     hidden: Boolean,
     selectedExploit: String,
@@ -141,6 +138,7 @@ fun SettingsScreen(
     onRemoveJailbreak: () -> Unit,
     onOpenExploits: () -> Unit,
     onOpenThemes: () -> Unit,
+    onOpenPackageManager: () -> Unit,
     onBack: () -> Unit,
 ) {
     DetailScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
@@ -232,55 +230,23 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(24.dp))
-
+        /*
+         * Package Manager and Password were two sections of switches and a text field sitting
+         * inline. On iOS both live one level down - the package manager choice is its own list,
+         * the sudo password is set during the wizard - and keeping them inline buried everything
+         * below them under a keyboard-sized block.
+         *
+         * They are now one entry point that opens a sub-screen, showing the current values so the
+         * row is still informative without being opened.
+         */
         SectionLabel(stringResource(R.string.settings_section_package_manager))
         SettingsCard {
-            // Installer is deliberately absent: only the two package managers Dopamine offers for
-            // a normal bootstrap are listed, so the choice matches what the rest of the app claims.
-            listOf(
-                "sileo" to "Sileo",
-                "zebra" to "Zebra",
-            ).forEachIndexed { index, (key, label) ->
-                if (index > 0) {
-                    HorizontalDivider(
-                        color = DopamineColors.Separator,
-                        thickness = 0.5.dp,
-                        modifier = Modifier.padding(start = 16.dp),
-                    )
-                }
-                ChoiceRow(
-                    title = label,
-                    selected = packageManager == key,
-                    onClick = { onPackageManagerChange(key) },
-                )
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        SectionLabel(stringResource(R.string.settings_section_sudo))
-        SettingsCard {
-            Column(Modifier.padding(16.dp)) {
-                var draft by remember(sudoPassword) { mutableStateOf(sudoPassword.orEmpty()) }
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = {
-                        draft = it
-                        onSudoPasswordChange(it)
-                    },
-                    label = { Text(stringResource(R.string.settings_password)) },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.settings_sudo_note),
-                    color = DopamineColors.TextSecondary,
-                    fontSize = 12.sp,
-                )
-            }
+            ChoiceRow(
+                title = stringResource(R.string.settings_section_package_manager),
+                value = packageManagerLabel(packageManager),
+                selected = false,
+                onClick = onOpenPackageManager,
+            )
         }
 
         /*
