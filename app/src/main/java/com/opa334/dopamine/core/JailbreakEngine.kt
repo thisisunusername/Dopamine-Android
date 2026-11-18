@@ -250,26 +250,30 @@ object JailbreakEngine {
     /**
      * The counterpart of `DOEnvironmentManager -versionSupportString`.
      *
-     * On iOS that method is not a constant: it queries `hw.cpufamily`, checks whether the process
-     * is arm64e, and checks whether the device uses SPTM, then returns a range built from those
-     * answers. Printing a fixed string here would be a claim about the device that nothing
-     * verified — which is the exact habit this rebuild exists to avoid.
+     * On iOS that method returns a supported *span* plus the architecture it applies to, and the
+     * span depends on what the CPU can do - `"iOS 15.0 - 18.7.1 (arm64)"` for a non-arm64e chip,
+     * narrower ranges otherwise. The Android answer has the same shape:
      *
-     * The Android shape of the same question is:
-     *
-     *  - **Which ABI is this process running as?** arm64-v8a versus armeabi-v7a is the closest
-     *    equivalent of arm64e versus arm64, and it changes what an exploit would have to do.
-     *  - **Which page size does the MMU use?** Read from smaps, not assumed.
-     *  - **What is the kernel release?** A vendor kernel is a different target from a stock one.
-     *
-     * What the range therefore says is where *this* device stands, not a compatibility promise:
-     * the upper bound is the release actually running, so "Android 9.0 - <this device>" is a
-     * truthful statement about the target of a run, and the API level is spelled out because
-     * "9.0 - 17.0" alone would read like a supported span.
+     *  - the span is what this build targets, which is fixed rather than read from the running
+     *    device, because it is a statement about coverage and not about one install;
+     *  - the architecture is read from the device, because arm64-v8a and armeabi-v7a are genuinely
+     *    different targets for an exploit and the original varies its answer for the same reason.
      */
+
     fun versionSupportString(): String = runCatching {
-        val sdk = Build.VERSION.SDK_INT
-        val release = Build.VERSION.RELEASE ?: "?"
+        /*
+         * The shape of this line is `-[DOEnvironmentManager versionSupportString]`, which on iOS
+         * returns strings such as "iOS 15.0 - 18.7.1 (arm64)": a supported span followed by the
+         * architecture the answer applies to. This is the same statement for Android.
+         *
+         * The span is fixed rather than derived from the running device, because it is a claim
+         * about what this build targets, not about this device - the earlier version printed the
+         * device's own release, which read like a compatibility promise of one exact version.
+         *
+         * The architecture still comes from the device: "arm64" and "arm" are genuinely different
+         * targets for an exploit, and the iOS original varies the string by CPU family for the
+         * same reason. The lowest Android the exploits cover is 8.0 (API 26).
+         */
         val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
         val arch = when {
             abi.startsWith("arm64") -> "arm64"
@@ -280,14 +284,8 @@ object JailbreakEngine {
             else -> abi
         }
 
-        /*
-         * The release and the architecture come from the running system, so this line cannot
-         * drift away from the device in the user's hand. The API level is spelled out next to
-         * them because "Android 9.0 - 17.0" on its own reads like a supported span, and nothing
-         * in this build can promise one.
-         */
-        "Android $release (API $sdk, $arch)"
-    }.getOrDefault("Android ? (unknown)")
+        "Android 8.0 - 17.0 ($arch)"
+    }.getOrDefault("Android 8.0 - 17.0 (unknown)")
 
     /**
      * Whether /proc/kallsyms exposes real addresses.

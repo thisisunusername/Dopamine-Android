@@ -284,7 +284,14 @@ private fun DopamineScreens(
             title = if (jailbroken) titleJailbroken else titleJailbreak,
             packageManager = packageManager,
             deviceLine = DeviceProfile.read().let {
-                "${it.manufacturer} ${it.model} · Android ${it.androidRelease} (API ${it.sdk})"
+                /*
+                 * The same span as the header, then the device itself.
+                 *
+                 * The header states what the build targets; this line states what is in the
+                 * user's hand. Keeping the target span here as well means the log does not
+                 * contradict the screen it is drawn on.
+                 */
+                "${JailbreakEngine.versionSupportString()} · ${it.manufacturer} ${it.model}"
             },
         )
     }
