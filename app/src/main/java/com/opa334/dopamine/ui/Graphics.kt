@@ -285,29 +285,35 @@ fun BlackoutSequence(
         // behind this composable (the main screen's blurred photo) can ever show through.
         Box(Modifier.fillMaxSize().background(Color.Black))
 
-        val markVisible = markAlpha.value > 0f
-        if (markVisible) {
-            when (sequence) {
-                is BootSequence.Themed -> {
-                    /*
-                     * The theme's own ring, not the app icon.
-                     *
-                     * What blinks on iOS is the boot logo built by `-[DOTheme generateBootLogo]`:
-                     * the theme background with `DopamineLogo` - the notched ring - drawn
-                     * centred on top. Both parts come from one image there, so the colour and the
-                     * ring are never separated; here the colour is the theme's and the ring is
-                     * the artwork, painted by the same composable so they fade as one thing.
-                     */
-                    BootRing(theme = sequence.theme, alpha = markAlpha.value)
-                }
+        /*
+         * The mark is drawn unconditionally; its own alpha does the fading.
+         *
+         * This used to be `if (markAlpha.value > 0f)`, meant to keep the mark from leaking into
+         * the Apple's frames. It also skipped the whole mark - colour and ring - on the first
+         * frame of every blink and on any frame where the animation had not advanced yet, so a
+         * theme could blink and show nothing. The Apple stage paints its own opaque black fill
+         * over the mark, so there is nothing to keep separate.
+         */
+        when (sequence) {
+            is BootSequence.Themed -> {
+                /*
+                 * The theme's own ring, not the app icon.
+                 *
+                 * What blinks on iOS is the boot logo built by `-[DOTheme generateBootLogo]`:
+                 * the theme background with `DopamineLogo` - the notched ring - drawn
+                 * centred on top. Both parts come from one image there, so the colour and the
+                 * ring are never separated; here the colour is the theme's and the ring is
+                 * the artwork, painted by the same composable so they fade as one thing.
+                 */
+                BootRing(theme = sequence.theme, alpha = markAlpha.value)
+            }
 
-                is BootSequence.Custom -> {
-                    CustomBootImage(path = sequence.imagePath, alpha = markAlpha.value)
-                }
+            is BootSequence.Custom -> {
+                CustomBootImage(path = sequence.imagePath, alpha = markAlpha.value)
+            }
 
-                is BootSequence.Off -> {
-                    // No artwork at all, so there is nothing to place in the centre.
-                }
+            is BootSequence.Off -> {
+                // No artwork at all, so there is nothing to place in the centre.
             }
         }
 
@@ -345,17 +351,38 @@ internal fun BootRing(
     theme: DopamineThemeKey,
     alpha: Float,
 ) {
+    /*
+     * The colour is a full-screen fill, and the ring is drawn on top of it - in that order, and
+     * the whole thing is one layer whose alpha is animated.
+     *
+     * Two details matter here and both were wrong at some point:
+     *
+     *  - `background` comes before `graphicsLayer`, because order in a modifier chain is order of
+     *    drawing. With the layer first, the colour and the ring were flattened into a layer that
+     *    was itself the animated element - fine - but the fill was then applied to the *layer's*
+     *    bounds rather than the screen, so the tint could be clipped to the ring's box;
+     *  - the fill is opaque (alpha 1). Anything less and the black behind it darkens the theme
+     *    into the grey that was reported: a 45-60% colour over black is most of the way to black.
+     */
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .graphicsLayer { this.alpha = alpha }
-            .background(theme.actionMenuColor.copy(alpha = 1f)),
+            .graphicsLayer { this.alpha = alpha },
         contentAlignment = Alignment.Center,
     ) {
+        // Full screen, behind the ring. This is the part that "fills the whole screen" with the
+        // theme's colour; the ring itself is only a band 240 dp across.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(theme.actionMenuColor.copy(alpha = 1f)),
+        )
+
         /*
          * The ring is `DopamineLogo.pdf` rasterised once: the PDF is a vector, and painterResource
-         * only takes a vector *Android* drawable, not a PDF. The PNG is transparent inside and
-         * outside the band, so the theme colour shows through both.
+         * only takes a vector *Android* drawable, not a PDF. The PNG is a band - transparent
+         * inside radius 280 and outside 512 of its 1024 px side - so the theme colour shows
+         * through the hole and around the rim.
          */
         Image(
             painter = painterResource(R.drawable.dopamine_ring),

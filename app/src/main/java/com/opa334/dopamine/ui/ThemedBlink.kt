@@ -69,12 +69,20 @@ fun ThemedMarkBlink(
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {
-        if (markAlpha.value > 0f) {
-            when (sequence) {
-                is BootSequence.Themed -> BootRing(sequence.theme, markAlpha.value)
-                is BootSequence.Custom -> CustomBootImage(sequence.imagePath, markAlpha.value)
-                is BootSequence.Off -> Unit
-            }
+        /*
+         * Always drawn while the mark is playing, at whatever alpha it currently has.
+         *
+         * This used to be wrapped in `if (markAlpha.value > 0f)`, to keep the mark out of the
+         * Apple's frames. The cost was worse than the benefit: the whole blink - colour and ring
+         * together - was dropped on the very first frame, and any frame where the value had not
+         * moved yet, so a theme could blink and show nothing at all. The mark is drawn
+         * unconditionally now and its own alpha does the fading; at 0 it is invisible anyway, and
+         * the Apple stage draws its own black fill on top, so nothing leaks between them.
+         */
+        when (sequence) {
+            is BootSequence.Themed -> BootRing(sequence.theme, markAlpha.value)
+            is BootSequence.Custom -> CustomBootImage(sequence.imagePath, markAlpha.value)
+            is BootSequence.Off -> Unit
         }
     }
 }
