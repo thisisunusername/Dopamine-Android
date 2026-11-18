@@ -226,7 +226,7 @@ fun BlackoutSequence(
                  */
                 delay(800L)
 
-                repeat(3) {
+                repeat(2) {
                     markAlpha.animateTo(1f, tween(550, easing = LinearEasing))
                     delay(1_000L)
                     markAlpha.animateTo(0f, tween(550, easing = LinearEasing))
@@ -291,9 +291,13 @@ fun BlackoutSequence(
 /**
  * The ring from `DopamineLogo.pdf` on the theme's colour.
  *
- * The background is the theme's `actionMenuColor` rather than the photograph: at boot-screen size
- * the photo reads as noise, and what was asked for is the theme colour with the ring on it. The
- * colour is still the theme's own value, so each theme blinks its own colour.
+ * The colour fills the whole screen, not just the disc behind the ring. It used to be a 132 dp
+ * circle, which made the blink read as a small coloured dot in the middle of black; the theme
+ * colour is the background of the boot screen, so it has to cover it.
+ *
+ * The colour is `actionMenuColor` rather than the theme photograph: at boot-screen size the photo
+ * reads as noise, and what is wanted is the theme's own colour with the ring on it, so each theme
+ * blinks its own shade.
  */
 @Composable
 private fun BootRing(
@@ -302,13 +306,11 @@ private fun BootRing(
 ) {
     Box(
         modifier = Modifier
-            .size(132.dp)
+            .fillMaxSize()
+            .background(theme.actionMenuColor.copy(alpha = 1f))
             .graphicsLayer { this.alpha = alpha },
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(color = theme.actionMenuColor.copy(alpha = 1f))
-        }
         /*
          * The ring is `DopamineLogo.pdf` rasterised once: the PDF is a vector, and painterResource
          * only takes a vector *Android* drawable, not a PDF. The PNG is transparent inside and
@@ -317,7 +319,7 @@ private fun BootRing(
         Image(
             painter = painterResource(R.drawable.dopamine_ring),
             contentDescription = "Dopamine",
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.size(240.dp),
             contentScale = ContentScale.Fit,
         )
     }

@@ -52,10 +52,19 @@ object Daemon {
     fun start(context: Context): Int? {
         val shell = resolveShell(context) ?: return null
         val hb = heartbeatFile(context)
+        /*
+         * Drop any heartbeat left by a previous run before starting a new one.
+         *
+         * Otherwise a stale file makes a brand-new daemon look alive before it has done anything,
+         * which is the mirror image of the bug above: the first check passes for the wrong reason.
+         */
+        hb.delete()
 
         // Timestamps are plain `date +%s`, which every Android `sh` provides; no busybox needed.
+        // The first write happens before the sleep so the heartbeat exists as soon as the loop
+        // starts, instead of one sleep interval later.
         val script =
-            "while true; do date +%s > '${hb.absolutePath}'; sleep 5; done"
+            "date +%s > '${hb.absolutePath}'; while true; do sleep 5; date +%s > '${hb.absolutePath}'; done"
 
         val pid = runCatching {
             val process = ProcessBuilder(shell, "-c", "nohup sh -c \"$script\" >/dev/null 2>&1 & echo \$!")
@@ -90,7 +99,20 @@ object Daemon {
     fun isAlive(context: Context, pid: Int): Boolean {
         if (!isAlive(pid)) return false
         val hb = heartbeatFile(context)
-        if (!hb.isFile) return false
+        /*
+         * A missing heartbeat is not proof of death for a process that has just started.
+         *
+         * The loop writes its first timestamp after it is scheduled, which is not the instant
+         * start() returns. Requiring the file immediately meant the first run of a fresh install
+         * failed the check a few milliseconds too early: the run reported "daemon did not start",
+         * no blink played, and the state was not marked jailbroken. The second attempt succeeded
+         * only because the heartbeat from the first (rejected) daemon was by then on disk - which
+         * is exactly the "needs two taps" behaviour.
+         *
+         * The pid is already known to exist here, so a missing heartbeat means "too new to have
+         * written one yet", and the answer is to wait rather than to declare failure.
+         */
+        if (!hb.isFile) return true
         val age = System.currentTimeMillis() - hb.lastModified()
         return age in 0..STALE_MS
     }
@@ -108,4 +130,19 @@ object Daemon {
     fun clearHeartbeat(context: Context) {
         heartbeatFile(context).delete()
     }
+
+    /**
+     * The file that says "this device is jailbroken", independent of any running process.
+     *
+     * Killing the app from Recents kills the daemon too: the shell loop is a child of this process
+     * group, whatever `nohup` suggests, and Android reclaims the group when the task is swiped
+     * away. Until now that meant the whole jailbreak state vanished with it, because "jailbroken"
+     * was defined as "the daemon pid is in /proc" - so a swipe looked exactly like "never
+     * jailbroken", and the exploit had to be run again.
+     *
+     * What survives a swipe is the filesystem, so that is where the state belongs. The marker is
+     * written when the run succeeds and removed by "Remove Jailbreak"; the daemon is then an
+     * implementation detail that can be restarted on demand rather than the definition itself.
+     */
+    fun markerFile(context: Context): File = File(dir(context), "jailbroken")
 }

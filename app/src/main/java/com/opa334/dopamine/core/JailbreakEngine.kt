@@ -374,8 +374,27 @@ object JailbreakEngine {
             JailbreakState.markEverJailbroken(context)
             onEvent(StepEvent.Done(true, context.getString(R.string.action_jailbroken)))
         } else {
-            JailbreakState.clearDaemonPid(context)
-            onEvent(StepEvent.Done(false, context.getString(R.string.result_daemon_failed)))
+            /*
+             * The daemon did not prove itself alive, but the staged files exist and the step that
+             * started it reported a pid. Rather than throwing the whole run away - which is what
+             * made a first attempt fail while a second one worked - retry once before deciding.
+             *
+             * A freshly spawned shell loop can miss the very first liveness window, and reporting
+             * that as a failed jailbreak is both wrong and confusing: the device is fine a moment
+             * later, and the only symptom is that the user has to tap twice.
+             */
+            val retried = withContext(Dispatchers.IO) {
+                delay(700L)
+                val pid = JailbreakState.daemonPid(context)
+                pid > 0 && Daemon.isAlive(context, pid)
+            }
+            if (retried) {
+                JailbreakState.markEverJailbroken(context)
+                onEvent(StepEvent.Done(true, context.getString(R.string.action_jailbroken)))
+            } else {
+                JailbreakState.clearDaemonPid(context)
+                onEvent(StepEvent.Done(false, context.getString(R.string.result_daemon_failed)))
+            }
         }
     }
 

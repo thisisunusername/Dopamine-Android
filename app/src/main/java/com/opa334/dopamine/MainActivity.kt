@@ -45,8 +45,10 @@ import com.opa334.dopamine.ui.ThemeBackground
 import com.opa334.dopamine.ui.ThemeIcon
 import com.opa334.dopamine.ui.ThemePickerScreen
 import com.opa334.dopamine.ui.applyEvent
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The single activity.
@@ -167,7 +169,12 @@ private fun DopamineScreens(
 
     // Screens are derived from persisted state on every recomposition, so leaving the app and
     // coming back cannot show a stale answer — the bug this app is a rebuild of.
-    var jailbroken by remember { mutableStateOf(JailbreakState.isJailbroken(context)) }
+    // Starts as false and is filled in by the LaunchedEffect below.
+    //
+    // isJailbroken can now spawn the daemon when the marker is present but the process is gone
+    // (a swipe from Recents kills it), so it does real work and must not be called during
+    // composition: composing has to stay cheap and repeatable.
+    var jailbroken by remember { mutableStateOf(false) }
     var detailedLog by remember { mutableStateOf(JailbreakState.detailedLog(context)) }
     var packageManager by remember { mutableStateOf(JailbreakState.packageManager(context)) }
 
@@ -200,8 +207,10 @@ private fun DopamineScreens(
     val titleJailbreaking = stringResource(R.string.action_jailbreaking)
 
     /** Re-reads the daemon and pushes the result into the UI state. */
-    fun refreshState() {
-        jailbroken = JailbreakState.isJailbroken(context)
+    suspend fun refreshState() {
+        // Same reason as the initial read: isJailbroken may have to start the daemon, which is a
+        // blocking spawn rather than a lookup.
+        jailbroken = withContext(Dispatchers.IO) { JailbreakState.isJailbroken(context) }
         packageManager = JailbreakState.packageManager(context)
         ui = ui.copy(
             jailbroken = jailbroken,
@@ -231,24 +240,28 @@ private fun DopamineScreens(
                 onEvent = { event ->
                     ui = ui.applyEvent(event, total)
                     if (event is StepEvent.Done) {
+                        /*
+                         * The log collapses when the run is over.
+                         *
+                         * `expanded` was only ever set to true, never back to false, so the panel
+                         * stayed on screen after the jailbreak finished and the main screen no
+                         * longer looked like the one the app starts on. The log belongs to the run;
+                         * when the run ends it goes away.
+                         *
+                         * The state is refreshed on both branches. It used to happen only on
+                         * failure, so after a successful run `jailbroken` stayed false and `busy`
+                         * stayed true - the button still read "Jailbreak" and tapping it re-ran the
+                         * whole flow, which is why the blink appeared to need two taps.
+                         */
+                        ui = ui.copy(expanded = false)
                         if (event.ok) {
                             overlay = Overlay.Blackout
-                            /*
-                             * Update the state now, not after the blink.
-                             *
-                             * refreshState() used to run only on the failure branch, so on
-                             * success `jailbroken` stayed false and `busy` stayed true until the
-                             * activity was recreated. The visible effect was that the blink played
-                             * once, the screen came back still showing "Jailbreak", and tapping it
-                             * again re-ran the whole flow - which is why the blink only appeared
-                             * to work after leaving and re-entering the app. The daemon really was
-                             * up; the UI just had not been told.
-                             */
-                            refreshState()
                         } else {
                             overlay = Overlay.None
-                            refreshState()
                         }
+                        // onEvent is a plain callback, not a suspend one, and refreshState now has
+                        // to hop to the IO dispatcher, so it is launched rather than called.
+                        scope.launch { refreshState() }
                     }
                 },
             )
@@ -257,7 +270,14 @@ private fun DopamineScreens(
 
     // Re-read the daemon on every (re)entry; the activity may have been backgrounded for a long time.
     LaunchedEffect(Unit) {
-        jailbroken = JailbreakState.isJailbroken(context)
+        /*
+         * Off the main thread, because isJailbroken may now have to start the daemon.
+         *
+         * Coming back to the app after it was swiped away from Recents is exactly the case where
+         * the marker file is present and the process is not, so this call can spawn a shell and
+         * wait for it. That is a blocking operation and the first frame must not wait for it.
+         */
+        jailbroken = withContext(Dispatchers.IO) { JailbreakState.isJailbroken(context) }
         packageManager = JailbreakState.packageManager(context)
         ui = ui.copy(
             jailbroken = jailbroken,
@@ -514,7 +534,7 @@ private fun DopamineScreens(
                 },
                 onFinished = {
                     overlay = Overlay.None
-                    refreshState()
+                    scope.launch { refreshState() }
                 },
             )
         }

@@ -43,6 +43,13 @@ object JailbreakState {
 
     fun markEverJailbroken(context: Context) {
         prefs(context).edit().putBoolean(KEY_EVER, true).apply()
+        /*
+         * The marker file is written here because this is the one call that runs when a jailbreak
+         * succeeds. It is what survives the app being swiped away: the daemon does not, and the
+         * preference above only records "has this ever been jailbroken", which is a different
+         * question from "is it jailbroken now".
+         */
+        runCatching { Daemon.markerFile(context).writeText(System.currentTimeMillis().toString()) }
     }
 
     /**
@@ -54,6 +61,9 @@ object JailbreakState {
      */
     fun clearEverJailbroken(context: Context) {
         prefs(context).edit().putBoolean(KEY_EVER, false).apply()
+        // Removing the marker is what makes `isJailbroken` report false again; without this the
+        // app would still believe it is jailbroken after "Remove Jailbreak".
+        runCatching { Daemon.markerFile(context).delete() }
     }
 
     /**
@@ -63,9 +73,34 @@ object JailbreakState {
      * exactly, with no stale-file window. The daemon is spawned by [Daemon] and records its pid.
      */
     fun isJailbroken(context: Context): Boolean {
+        /*
+         * The marker file is the answer, not the daemon.
+         *
+         * "Jailbroken" used to mean "the recorded daemon pid still exists", so swiping the app
+         * away from Recents - which takes the daemon with it, since it is spawned from this
+         * process's group - made the device report itself as never jailbroken, and the exploit had
+         * to be run again. What survives is the filesystem, so that is what decides.
+         *
+         * The daemon is brought back if it is not running: it is what the marker promises exists,
+         * and the next thing the UI does is offer "Restart userspace" and "Remove jailbreak",
+         * both of which need it. Starting it here keeps the two consistent rather than leaving a
+         * marker that claims a daemon which is not there.
+         */
+        if (!Daemon.markerFile(context).isFile) return false
+
         val pid = prefs(context).getInt(KEY_DAEMON_PID, -1)
-        if (pid <= 0) return false
-        return Daemon.isAlive(pid)
+        if (pid > 0 && Daemon.isAlive(pid)) return true
+
+        // The marker is there but the process is gone: bring it back.
+        val restarted = Daemon.start(context)
+        if (restarted != null) {
+            setDaemonPid(context, restarted)
+            return true
+        }
+        // The marker is authoritative even if the daemon could not be respawned right now; the
+        // files a jailbreak created are still on disk, and reporting "not jailbroken" would invite
+        // the user to run the exploit again over a broken half-state.
+        return true
     }
 
     fun daemonPid(context: Context): Int = prefs(context).getInt(KEY_DAEMON_PID, -1)
