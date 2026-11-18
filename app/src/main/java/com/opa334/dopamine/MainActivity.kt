@@ -21,6 +21,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.opa334.dopamine.core.DeviceProfile
 import com.opa334.dopamine.core.JailbreakEngine
@@ -43,7 +44,6 @@ import com.opa334.dopamine.ui.SettingsScreen
 import com.opa334.dopamine.ui.ThemeBackground
 import com.opa334.dopamine.ui.ThemeIcon
 import com.opa334.dopamine.ui.ThemePickerScreen
-import com.opa334.dopamine.ui.DopamineTheme
 import com.opa334.dopamine.ui.applyEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -144,7 +144,8 @@ private fun DopamineApp() {
             theme = theme,
             onThemeChange = { picked ->
                 theme = picked
-                JailbreakState.setTheme(context, picked)
+                // Stored as its plist identifier, which is what the original preference holds.
+                JailbreakState.setTheme(context, picked.key)
                 // Repaints the launcher icon; the package manager does the actual swap.
                 ThemeIcon.apply(context, picked)
             },
@@ -159,7 +160,9 @@ private fun DopamineScreens(
     onThemeChange: (DopamineThemeKey) -> Unit,
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
+    // The image picker lives on MainActivity: it registers a PickVisualMedia launcher, which only
+    // an activity can do. `activity` alone is too wide a type to call it on.
+    val host = context as? MainActivity
     val scope = rememberCoroutineScope()
 
     // Screens are derived from persisted state on every recomposition, so leaving the app and
@@ -366,7 +369,7 @@ private fun DopamineScreens(
                     },
                     customBootlogoPath = customBootlogoPath,
                     onPickBootlogoImage = {
-                        activity?.pickBootlogoImage { uri ->
+                        host?.pickBootlogoImage { uri ->
                             scope.launch {
                                 val saved = BootlogoStore.copyInto(context, uri)
                                 if (saved != null) {
