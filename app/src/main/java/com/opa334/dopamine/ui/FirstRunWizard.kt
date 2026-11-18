@@ -67,7 +67,7 @@ fun FirstRunWizard(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DopamineColors.Window)
+            .background(dopaminePalette.window)
             .clickable(enabled = false, onClick = {}),
     ) {
         Column(
@@ -122,7 +122,7 @@ fun FirstRunWizard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(DopamineColors.Menu),
+                        .background(dopaminePalette.menu),
                 ) {
                     listOf(
                         "sileo" to "Sileo",
@@ -198,7 +198,7 @@ fun FirstRunWizard(
                     .height(56.dp)
                     .alpha(if (if (step == 0) canContinue else passwordsMatch) 1f else 0.5f)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(DopamineColors.Menu)
+                    .background(dopaminePalette.menu)
                     .clickable(enabled = if (step == 0) canContinue else passwordsMatch) {
                         if (step == 0) {
                             step = 1

@@ -9,44 +9,32 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.asImageBitmap
-import com.opa334.dopamine.R
 
 /**
- * The colours, taken from the iOS app rather than invented.
+ * Colours that do not change with the theme.
  *
- * The window is not black. Dopamine paints a photograph (`Background_Green.jpg`) edge
- * to edge and blurs it, then draws translucent grey panels on top. Everything below is
- * read from `Themes.plist` and `DONavigationController.m`:
+ * Everything that does come from the theme (the card fill, the window fill, the shadow flag) is
+ * carried by [DopaminePalette] instead, because the theme can change while the app is running.
  *
- *   image Background_Green.jpg, ScaleAspectFill, blur 18
- *   actionMenuColor 723F3F3F -> rgb(63,63,63) at 0x72/255 = 45% alpha   (cards/buttons)
- *   windowColor     994C4C4C -> rgb(76,76,76) at 0x99/255 = 60% alpha   (settings window)
- *
- * The iOS code multiplies the menu colour's alpha by a factor per use site
- * (`menuColorWithAlpha:`), so the constants below are that colour at the alphas the
- * call sites pass, not new colours.
+ * The values below are read from `Themes.plist` and `DONavigationController.m`; the default
+ * theme's `actionMenuColor 723F3F3F` is #3F3F3F at 45% and its `windowColor 994C4C4C` is #4C4C4C
+ * at 60%, which is where the comments in [DopaminePalette] come from.
  */
 object DopamineColors {
 
-    /** `actionMenuColor` = #3F3F3F at 45%. The card and button fill. */
-    val Menu = Color(0x723F3F3F)
-
-    /** The same colour raised for things that must read above a card (e.g. a pressed row). */
-    val MenuRaised = Color(0x8C3F3F3F)
-
-    /** `windowColor` = #4C4C4C at 60%. The settings/about sheet. */
-    val Window = Color(0x994C4C4C)
-
-    /** Hairlines: the iOS separator is white at 10-15%. */
+    /** Hairlines: the iOS separator is white at 10-15%. Theme-independent. */
     val Separator = Color(0x1AFFFFFF)
 
     /** `mainSubtitleString`: solid white. */
@@ -69,39 +57,69 @@ object DopamineColors {
 }
 
 /**
+ * The active theme's palette, readable from any composable.
+ *
+ * A CompositionLocal rather than a parameter on every screen: the theme is genuinely global state,
+ * and threading it through every call site would add an argument to a dozen composables that only
+ * forward it.
+ */
+val LocalDopaminePalette = staticCompositionLocalOf { DopaminePalette.of(DopamineThemeKey.fallback) }
+
+/** The active theme itself, for the pieces that need its artwork (the boot ring, the icons). */
+val LocalDopamineTheme = staticCompositionLocalOf { DopamineThemeKey.fallback }
+
+/** Shorthand for the current palette. */
+val dopaminePalette: DopaminePalette
+    @Composable get() = LocalDopaminePalette.current
+
+/**
  * Wraps the whole app.
  *
- * The background lives here rather than in each screen so switching screens cannot flash
- * a different colour, and so the blackout overlay can cover it without fighting it.
+ * The theme is passed in rather than read from storage here so the settings screen can switch it
+ * and have every screen recompose from that one value.
  */
 @Composable
-fun DopamineTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            background = Color.Black,
-            surface = DopamineColors.Menu,
-            onBackground = DopamineColors.TextPrimary,
-            onSurface = DopamineColors.TextPrimary,
-        ),
-        typography = Typography(),
-        content = content,
-    )
+fun DopamineTheme(
+    theme: DopamineThemeKey = DopamineThemeKey.fallback,
+    content: @Composable () -> Unit,
+) {
+    val palette = remember(theme) { DopaminePalette.of(theme) }
+    CompositionLocalProvider(
+        LocalDopaminePalette provides palette,
+        LocalDopamineTheme provides theme,
+    ) {
+        MaterialTheme(
+            colorScheme = darkColorScheme(
+                background = Color.Black,
+                surface = palette.menu,
+                onBackground = DopamineColors.TextPrimary,
+                onSurface = DopamineColors.TextPrimary,
+            ),
+            typography = Typography(),
+            content = content,
+        )
+    }
 }
 
 /**
- * The themed background: the iOS photo, scaled to fill, blurred, sitting behind everything.
+ * The themed background: the theme's photograph, scaled to fill, blurred, behind everything.
  *
- * The source asset is 3000x2000, so it is decoded once and remembered; blurring is a
- * render-time effect and costs nothing on the bitmap itself. `scale(1.08)` hides the
- * softening of the edges that a blur otherwise leaves visible.
+ * The blur radius is the theme's own `blur` value from the plist, not a constant: Midnight Neon
+ * used 30 and Deep Blue Sky uses 40, and flattening them to one number would make four themes look
+ * more alike than the original does.
+ *
+ * `scale(1.08)` hides the softening of the edges that a blur otherwise leaves visible.
  */
 @Composable
 fun ThemeBackground(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    // Decoded once and remembered; asImageBitmap() is a zero-copy view over the same pixels.
-    val bitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.bg_green)?.asImageBitmap()
+    val theme = LocalDopamineTheme.current
+
+    // Decoded once per theme and remembered; asImageBitmap() is a zero-copy view over the pixels.
+    val bitmap: ImageBitmap? = remember(theme) {
+        BitmapFactory.decodeResource(context.resources, theme.background)?.asImageBitmap()
     }
+
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
         if (bitmap != null) {
             Image(
@@ -111,7 +129,7 @@ fun ThemeBackground(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxSize()
                     .scale(1.08f)
-                    .blur(18.dp),
+                    .blur(theme.blurPoints.dp),
             )
         }
     }

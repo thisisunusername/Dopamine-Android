@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Adaptive icon, assembled from the rasterised pieces rather than vectors.
-
   The previous version drew the background as a <gradient> inside a vector path via
   aapt:attr. On the device the ring appeared but the gradient did not, so the icon
   was a white square in the launcher and inside the app itself. Rasterised
   foreground/background layers have no such code path - what is on disk is what is
   drawn - and the legacy mipmap-*dpi/ic_launcher.png files cover launchers that do
   not understand adaptive icons at all.
+
+  This file is the default theme's icon. Every other theme has its own
+  ic_launcher_<theme>.xml next to it, and the manifest's activity-alias entries point
+  at those; switching theme enables a different alias.
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@mipmap/ic_launcher_background" />
-    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_launcher_background_default" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground_default" />
 </adaptive-icon>

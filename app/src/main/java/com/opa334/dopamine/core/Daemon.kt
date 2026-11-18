@@ -79,6 +79,8 @@ object Daemon {
      */
     fun isAlive(pid: Int): Boolean {
         if (pid <= 0) return false
+        // A single /proc lookup, no read and no wait: seconds at most, and it is called from the
+        // UI path, so it has to stay free of anything that could block on the filesystem.
         val exists = runCatching {
             File("/proc/$pid").exists()
         }.getOrDefault(false)

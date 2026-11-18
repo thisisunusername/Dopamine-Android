@@ -56,13 +56,19 @@ fun DetailScaffold(
     onBack: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            // The iOS settings window is `windowColor` (#4C4C4C at 60%) drawn over the same
-            // blurred photo as the main screen, so the photo is painted behind it here.
-            .background(DopamineColors.Window),
-    ) {
+    Box(Modifier.fillMaxSize()) {
+        /*
+         * The blurred photo first, then the theme's `windowColor` on top of it.
+         *
+         * On iOS the settings window is not opaque: it is `windowColor`, a translucent fill, drawn
+         * over the same blurred background photo the main screen uses. Painting only the fill gave
+         * a flat near-black page where every theme looked identical, because the fill's alpha had
+         * nothing behind it to reveal. Both layers are needed for the theme to be visible here.
+         */
+        ThemeBackground()
+        Box(Modifier.fillMaxSize().background(dopaminePalette.window))
+
+        Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -103,6 +109,7 @@ fun DetailScaffold(
             content()
             Spacer(Modifier.height(32.dp))
         }
+        }
     }
 }
 
@@ -123,11 +130,22 @@ fun SettingsScreen(
     jailbroken: Boolean,
     hidden: Boolean,
     selectedExploit: String,
+    theme: DopamineThemeKey,
+    onThemeChange: (DopamineThemeKey) -> Unit,
+    bootlogoEnabled: Boolean,
+    onBootlogoEnabledChange: (Boolean) -> Unit,
+    customBootlogoEnabled: Boolean,
+    onCustomBootlogoEnabledChange: (Boolean) -> Unit,
+    customBootlogoPath: String?,
+    onPickBootlogoImage: () -> Unit,
     onToggleHidden: () -> Unit,
     onRemoveJailbreak: () -> Unit,
     onOpenExploits: () -> Unit,
+    onOpenThemes: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val palette = dopaminePalette
+
     DetailScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
         /*
          * Exploits first, as on iOS. The list is the set of exploits Dopamine actually ships
@@ -298,6 +316,74 @@ fun SettingsScreen(
                 )
             }
         }
+
+        /*
+         * Customization, at the bottom of Settings.
+         *
+         * DOSettingsController builds this after the Actions group: `Section_Customization` holding
+         * a single `Theme` PSLinkListCell, whose detail page is the list of every theme in
+         * Themes.plist. The row here shows the current theme's name and opens that list, which is
+         * the same two levels as the original rather than a picker inlined into Settings.
+         */
+        Spacer(Modifier.height(24.dp))
+
+        SectionLabel(stringResource(R.string.settings_section_customization))
+        SettingsCard {
+            ChoiceRow(
+                title = stringResource(R.string.settings_theme),
+                value = theme.displayName,
+                selected = false,
+                onClick = onOpenThemes,
+            )
+        }
+
+        /*
+         * Boot Logo, directly under Customization.
+         *
+         * The original groups are `Section_Boot_Logo` with an `Enabled` switch, then
+         * `Custom_Boot_Logo` and `Select_Image`. Both of the latter are only added to the list while
+         * `bootlogoEnabled` is on, and `Select_Image` only while `customBootlogoEnabled` is on - so
+         * the rows appear and disappear rather than sitting there disabled. That is reproduced
+         * below, because the switches are nested: a custom logo with no boot logo has nothing to
+         * replace.
+         */
+        Spacer(Modifier.height(24.dp))
+
+        SectionLabel(stringResource(R.string.settings_section_bootlogo))
+        SettingsCard {
+            SwitchRow(
+                title = stringResource(R.string.settings_bootlogo_enabled),
+                subtitle = stringResource(R.string.settings_bootlogo_enabled_subtitle),
+                checked = bootlogoEnabled,
+                onCheckedChange = onBootlogoEnabledChange,
+            )
+
+            if (bootlogoEnabled) {
+                CardLine()
+                SwitchRow(
+                    title = stringResource(R.string.settings_custom_bootlogo),
+                    subtitle = stringResource(R.string.settings_custom_bootlogo_subtitle),
+                    checked = customBootlogoEnabled,
+                    onCheckedChange = onCustomBootlogoEnabledChange,
+                )
+
+                if (customBootlogoEnabled) {
+                    CardLine()
+                    /*
+                     * "Select Image" on iOS is a PSButtonCell holding the picture it currently has.
+                     * Here the row carries the chosen file name so the user can tell whether a
+                     * picture is actually set, and tapping it opens the system picker.
+                     */
+                    ChoiceRow(
+                        title = stringResource(R.string.settings_select_image),
+                        value = customBootlogoPath?.let { java.io.File(it).name }
+                            ?: stringResource(R.string.settings_select_image_none),
+                        selected = false,
+                        onClick = onPickBootlogoImage,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -363,6 +449,82 @@ fun ExploitPickerScreen(
                 text = stringResource(R.string.settings_exploit_note),
                 color = DopamineColors.TextSecondary,
                 fontSize = 12.sp,
+            )
+        }
+    }
+}
+/**
+ * The theme list, opened from Settings.
+ *
+ * The equivalent of `DOPSListItemsController` with `themeIdentifiers` / `themeNames` as its data
+ * sources: every theme in `Themes.plist`, ticked where it is the current one. Each row also shows
+ * the theme's own app icon, because the icon is part of what the theme changes and picking
+ * "Desert Dusk" without seeing its icon would leave the effect of the choice invisible until the
+ * launcher caught up.
+ */
+@Composable
+fun ThemePickerScreen(
+    selected: DopamineThemeKey,
+    onSelect: (DopamineThemeKey) -> Unit,
+    onBack: () -> Unit,
+) {
+    DetailScaffold(title = stringResource(R.string.settings_theme), onBack = onBack) {
+        SettingsCard {
+            DopamineThemeKey.all.forEachIndexed { index, item ->
+                if (index > 0) CardLine()
+                ThemeRow(
+                    theme = item,
+                    selected = item == selected,
+                    onClick = { onSelect(item) },
+                )
+            }
+        }
+    }
+}
+
+/** One theme row: its app icon, its name, and a tick when it is the current theme. */
+@Composable
+private fun ThemeRow(
+    theme: DopamineThemeKey,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            /*
+             * The theme's app icon, not a colour swatch: these are the artwork files the theme
+             * switches the launcher icon to, so the picture here is exactly what the home screen
+             * will show. They are PNGs, so painterResource is safe (an adaptive-icon XML would not
+             * be).
+             */
+            Image(
+                painter = painterResource(theme.icon),
+                contentDescription = stringResource(R.string.cd_theme_preview),
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop,
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = theme.displayName,
+                color = DopamineColors.TextPrimary,
+                fontSize = 15.sp,
+            )
+        }
+        if (selected) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = stringResource(R.string.cd_selected),
+                tint = DopamineColors.Success,
+                modifier = Modifier.size(18.dp),
             )
         }
     }
@@ -486,7 +648,9 @@ private fun SettingsCard(content: @Composable () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(DopamineColors.Menu),
+            // `actionMenuColor` from the active theme, at full strength: the cards follow the theme
+            // rather than staying grey while the background changes underneath them.
+            .background(dopaminePalette.menu),
     ) {
         content()
     }
@@ -535,7 +699,7 @@ private fun SwitchRow(
                 checkedThumbColor = DopamineColors.TextPrimary,
                 checkedTrackColor = DopamineColors.Success,
                 uncheckedThumbColor = DopamineColors.TextSecondary,
-                uncheckedTrackColor = DopamineColors.MenuRaised,
+                uncheckedTrackColor = dopaminePalette.menuRaised,
             ),
         )
     }

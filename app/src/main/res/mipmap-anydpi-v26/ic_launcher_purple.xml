@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive icon for the purple theme.
+
+    A launcher on API 26+ draws this instead of the plain bitmap, so each theme needs its own pair
+    of layers: the alias entries in the manifest point at these, and a single shared adaptive icon
+    would make every theme show the default artwork in the launcher.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background_purple" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground_purple" />
+</adaptive-icon>

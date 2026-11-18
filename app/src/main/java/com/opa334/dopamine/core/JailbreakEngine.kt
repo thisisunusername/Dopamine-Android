@@ -3,7 +3,9 @@ package com.opa334.dopamine.core
 import android.content.Context
 import android.os.Build
 import com.opa334.dopamine.R
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Emitted as the run progresses so the UI can render each line and tick. */
@@ -42,6 +44,16 @@ object JailbreakEngine {
     private const val STAGE_DIR = "dopamine"
 
     /**
+     * The exploit Dopamine picks when nothing has been chosen.
+     *
+     * Kept here rather than reaching into the UI package: the engine must be able to name the
+     * default on its own, and a UI enum would make the core depend on the screens that render it.
+     * The UI list (`com.opa334.dopamine.ui.Exploits`) is the same set in the same order, so the
+     * first entry is the recommended one on both sides.
+     */
+    const val DEFAULT_EXPLOIT = "ClearSword"
+
+    /**
      * Kernel releases the shipped exploits target and the iOS span each covers.
      *
      * Used only to tell the user whether their kernel is one the real Dopamine would recognise. The
@@ -56,7 +68,7 @@ object JailbreakEngine {
         "6.3" to ("iOS 16.0" to "16.6"),
     )
 
-    fun steps(context: Context, detailed: Boolean): List<ExploitStep> {
+    fun steps(context: Context, detailed: Boolean, exploit: String? = null): List<ExploitStep> {
         fun s(id: Int): String = context.getString(id)
 
         val steps = mutableListOf<ExploitStep>()
@@ -145,7 +157,17 @@ object JailbreakEngine {
             }
         }
 
-        steps += ExploitStep(s(R.string.step_exploit_kernel), 1_400L) { ctx ->
+        steps += ExploitStep(
+            // iOS: `sendLog:[NSString stringWithFormat:DOLocalizedString(@"Exploiting Kernel (%@)"),
+            // kernelExploit.name]` - the label is built from the selected exploit at run time.
+            // This used to be the fixed resource `Exploiting Kernel (ClearSword)`, so the log
+            // always claimed ClearSword even when Settings had a different exploit selected.
+            label = context.getString(
+                R.string.step_exploit_kernel_fmt,
+                exploit ?: JailbreakState.selectedExploit(context) ?: DEFAULT_EXPLOIT,
+            ),
+            durationMs = 1_400L,
+        ) { ctx ->
             // The step the real thing would spend its time in. Here it performs the only
             // privileged-looking work an unprivileged app can do: create its own staging area.
             val dir = File(context.filesDir, STAGE_DIR).apply { mkdirs() }
@@ -298,11 +320,13 @@ object JailbreakEngine {
     suspend fun run(
         context: Context,
         detailed: Boolean,
+        exploit: String? = null,
         onEvent: (StepEvent) -> Unit,
     ) {
         val device = DeviceProfile.read()
         val ctx = ExploitContext(device)
-        val list = steps(context, detailed)
+        val chosen = exploit ?: JailbreakState.selectedExploit(context) ?: DEFAULT_EXPLOIT
+        val list = steps(context, detailed, chosen)
 
         onEvent(
             StepEvent.Log(
@@ -311,7 +335,9 @@ object JailbreakEngine {
             ),
         )
         onEvent(StepEvent.Log("kernel ${device.kernel.ifEmpty { "unknown" }}"))
-        onEvent(StepEvent.Log("${list.size} steps · detailed=$detailed"))
+        // The exploit actually in use, on its own line: the step label repeats it, but a run that
+        // fails before reaching that step would otherwise leave no record of which one was chosen.
+        onEvent(StepEvent.Log("exploit=$chosen · ${list.size} steps · detailed=$detailed"))
 
         list.forEachIndexed { index, step ->
             onEvent(StepEvent.Started(index, step.label))
@@ -320,15 +346,30 @@ object JailbreakEngine {
             // The delay is what makes the log readable; the action itself is instant.
             delay(step.durationMs)
 
-            val result = runCatching { step.action(ctx) }
-                .getOrElse { "error: ${it.message ?: it::class.java.simpleName}" }
+            /*
+             * Each step runs off the main thread.
+             *
+             * This is not tidiness. `suspend` on its own does not move work off the caller's
+             * thread, and the steps call ProcessBuilder.start(), readLine(), waitFor() and file
+             * I/O - all blocking. Running them on the Compose coroutine's dispatcher (Main) meant
+             * the UI thread sat inside those calls while the run was going, and the visible symptom
+             * was that the notification shade could not be pulled down: the system's gesture and
+             * status-bar handling had no frame to work with. With the work on Dispatchers.IO the
+             * run still takes the same time, but the app keeps pumping frames and the shade works.
+             */
+            val result = withContext(Dispatchers.IO) {
+                runCatching { step.action(ctx) }
+                    .getOrElse { "error: ${it.message ?: it::class.java.simpleName}" }
+            }
             onEvent(StepEvent.Finished(index, step.label, result))
             onEvent(StepEvent.Progress((index + 1).toFloat() / list.size))
         }
 
         // Trust the daemon, not the step: it can report success and die a moment later.
-        val pid = JailbreakState.daemonPid(context)
-        val alive = pid > 0 && Daemon.isAlive(context, pid)
+        val alive = withContext(Dispatchers.IO) {
+            val pid = JailbreakState.daemonPid(context)
+            pid > 0 && Daemon.isAlive(context, pid)
+        }
         if (alive) {
             JailbreakState.markEverJailbroken(context)
             onEvent(StepEvent.Done(true, context.getString(R.string.action_jailbroken)))
@@ -363,17 +404,22 @@ object JailbreakEngine {
      * what a userspace reboot does to the daemon; the only thing missing is the rest of userspace.
      */
     suspend fun restartUserspace(context: Context): Boolean {
+        /*
+         * All of this touches processes and files, so it runs on Dispatchers.IO for the same reason
+         * the run does: kill/waitFor/start are blocking, and on the main thread they freeze the UI
+         * - including the notification shade - for as long as they take.
+         */
         val old = JailbreakState.daemonPid(context)
-        if (old > 0) Daemon.stop(old)
+        if (old > 0) withContext(Dispatchers.IO) { Daemon.stop(old) }
         JailbreakState.clearDaemonPid(context)
 
         // Give the kernel a moment to reap the old process so the liveness check cannot see it.
         delay(600L)
 
-        val pid = Daemon.start(context) ?: return false
+        val pid = withContext(Dispatchers.IO) { Daemon.start(context) } ?: return false
         JailbreakState.setDaemonPid(context, pid)
         delay(400L)
-        return Daemon.isAlive(context, pid)
+        return withContext(Dispatchers.IO) { Daemon.isAlive(context, pid) }
     }
 }
 

@@ -1,5 +1,7 @@
 package com.opa334.dopamine.ui
 
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -21,12 +23,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -45,7 +48,10 @@ private val HeaderArtHeight = 40.dp
  * the dark-mode version string in white 14 pt medium, then the credits line in white 60% 14 pt
  * regular. `DOMainViewController` loads `[UIImage imageNamed:@"Dopamine"]` for that artwork, and
  * that asset is a stylised *wordmark* - the letters "Dopamine" - not the ring from the app icon.
- * Shipping the ring here was wrong twice over: wrong asset, and drawn by hand on top of that.
+ *
+ * The theme's `titleShadow` flag adds a shadow behind both text lines. Only ElleKit and Midnight
+ * set it in the plist, and it is not decoration: those two backgrounds are light enough that white
+ * text without a shadow stops being legible over the photo.
  */
 @Composable
 fun DopamineHeader(
@@ -53,6 +59,17 @@ fun DopamineHeader(
     credits: String,
     modifier: Modifier = Modifier,
 ) {
+    val palette = dopaminePalette
+    val shadow = if (palette.titleShadow) {
+        androidx.compose.ui.graphics.Shadow(
+            color = Color(0x99000000),
+            offset = Offset(0f, 1f),
+            blurRadius = 3f,
+        )
+    } else {
+        null
+    }
+
     Column(modifier = modifier, horizontalAlignment = Alignment.Start) {
         /*
          * 40 dp tall and 202.5 dp wide: Dopamine@3x.png is 810x160, an aspect ratio of exactly
@@ -82,6 +99,11 @@ fun DopamineHeader(
             color = DopamineColors.TextPrimary,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
+            style = if (shadow != null) {
+                androidx.compose.ui.text.TextStyle(shadow = shadow)
+            } else {
+                androidx.compose.ui.text.TextStyle.Default
+            },
         )
 
         Spacer(Modifier.height(2.dp))
@@ -91,33 +113,36 @@ fun DopamineHeader(
             color = DopamineColors.TextSecondary,
             fontSize = 14.sp,
             fontWeight = FontWeight.Normal,
+            style = if (shadow != null) {
+                androidx.compose.ui.text.TextStyle(shadow = shadow)
+            } else {
+                androidx.compose.ui.text.TextStyle.Default
+            },
         )
     }
 }
 
 /**
- * The Dopamine mark used to be drawn here by hand: an annulus with a notch, from geometry measured
- * off Icon-60@3x.png. It has been removed rather than left unused, because a hand-drawn stand-in is
- * exactly what kept rendering as a white blob next to the original artwork.
- *
- * Everything that shows the mark now uses the real bitmap - `@mipmap/ic_launcher`, generated from
- * Icon-64@3x.png - so the app icon, the post-run sequence and the launcher can never drift apart.
- */
-
-/**
- * The Apple silhouette shown once, slowly, after the logo blinks.
+ * The Apple silhouette used by the boot sequence.
  *
  * Drawn as a path rather than shipped as an asset: the real logo is a trademark that does not
- * belong in this repository. This is a rounded fruit shape with a leaf, which is what the
- * animation needs in order to be legible.
+ * belong in this repository. [lying] rotates it 90 degrees, which is the "sideways Apple" shown
+ * when the boot logo is switched off.
  */
 @Composable
 fun AppleGlyph(
     modifier: Modifier = Modifier,
     color: Color = DopamineColors.TextPrimary,
     size: Dp = 96.dp,
+    lying: Boolean = false,
 ) {
-    Canvas(modifier = modifier.size(size)) {
+    val rotation = if (lying) -90f else 0f
+
+    Canvas(
+        modifier = modifier
+            .size(size)
+            .graphicsLayer { rotationZ = rotation },
+    ) {
         val w = this.size.width
         val h = this.size.height
         val path = Path().apply {
@@ -150,11 +175,27 @@ fun AppleGlyph(
 }
 
 /**
- * The sequence played when a run finishes.
+ * What the blackout sequence should play.
  *
- * Order is fixed by what the user sees on iOS: screen goes black, the artwork blinks twice, then a
- * single slow Apple glyph. Each phase has its own duration so the Apple step can be noticeably
- * slower, which is what makes the sequence feel deliberate rather than a generic fade.
+ * Three states, matching the two switches in Settings:
+ *
+ *  - [Themed]  bootlogo on, custom logo off: the theme ring blinks twice, then one slow Apple.
+ *  - [Custom]  bootlogo on, custom logo on and an image picked: the picked image blinks twice, then
+ *              one slow Apple.
+ *  - [Lying]   bootlogo off: a single Apple lying on its side, shown once, with no blinking at all.
+ *
+ * The last one is not an animation on purpose. With the boot logo disabled iOS leaves the boot
+ * screen entirely alone, and the nearest visible equivalent is one static image rather than a
+ * faster blink.
+ */
+sealed interface BootSequence {
+    data class Themed(val theme: DopamineThemeKey) : BootSequence
+    data class Custom(val imagePath: String?) : BootSequence
+    data object Lying : BootSequence
+}
+
+/**
+ * The sequence played when a run finishes.
  *
  * Unlike iOS, it then hands control back instead of closing the app: on iOS the process is really
  * replaced and SpringBoard returns, but on Android closing the app is the whole visible result and
@@ -162,29 +203,44 @@ fun AppleGlyph(
  */
 @Composable
 fun BlackoutSequence(
+    sequence: BootSequence,
     modifier: Modifier = Modifier,
     onFinished: () -> Unit,
 ) {
     val markAlpha = remember { Animatable(0f) }
     val appleAlpha = remember { Animatable(0f) }
 
-    LaunchedEffect(Unit) {
-        delay(450L)
+    LaunchedEffect(sequence) {
+        when (sequence) {
+            is BootSequence.Themed, is BootSequence.Custom -> {
+                delay(450L)
 
-        repeat(2) {
-            markAlpha.animateTo(1f, tween(220, easing = LinearEasing))
-            delay(160L)
-            markAlpha.animateTo(0f, tween(220, easing = LinearEasing))
-            delay(100L)
+                repeat(2) {
+                    markAlpha.animateTo(1f, tween(220, easing = LinearEasing))
+                    delay(160L)
+                    markAlpha.animateTo(0f, tween(220, easing = LinearEasing))
+                    delay(100L)
+                }
+
+                delay(250L)
+
+                appleAlpha.animateTo(1f, tween(900, easing = LinearEasing))
+                delay(700L)
+                appleAlpha.animateTo(0f, tween(400, easing = LinearEasing))
+
+                delay(200L)
+            }
+
+            is BootSequence.Lying -> {
+                // Shown once and held, then faded out so the return to the main screen is not a cut.
+                delay(600L)
+                appleAlpha.animateTo(1f, tween(400, easing = LinearEasing))
+                delay(1400L)
+                appleAlpha.animateTo(0f, tween(500, easing = LinearEasing))
+                delay(150L)
+            }
         }
 
-        delay(250L)
-
-        appleAlpha.animateTo(1f, tween(900, easing = LinearEasing))
-        delay(700L)
-        appleAlpha.animateTo(0f, tween(400, easing = LinearEasing))
-
-        delay(200L)
         onFinished()
     }
 
@@ -194,22 +250,113 @@ fun BlackoutSequence(
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {
+        when (sequence) {
+            is BootSequence.Themed -> {
+                /*
+                 * The theme's own artwork, not the app icon.
+                 *
+                 * What blinks on iOS is the boot logo built by `-[DOTheme generateBootLogo]`: the
+                 * theme background with `DopamineLogo` - the notched ring - drawn centred on top.
+                 * An app icon stood there until now, which is a different picture; the ring is the
+                 * one the original blinks, and it is drawn over the theme colour here.
+                 */
+                BootRing(
+                    theme = sequence.theme,
+                    alpha = markAlpha.value,
+                )
+                AppleGlyph(
+                    modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },
+                    size = 104.dp,
+                )
+            }
+
+            is BootSequence.Custom -> {
+                CustomBootImage(
+                    path = sequence.imagePath,
+                    alpha = markAlpha.value,
+                )
+                AppleGlyph(
+                    modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },
+                    size = 104.dp,
+                )
+            }
+
+            is BootSequence.Lying -> {
+                AppleGlyph(
+                    modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },
+                    size = 104.dp,
+                    lying = true,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The ring from `DopamineLogo.pdf` on the theme's colour.
+ *
+ * The background is the theme's `actionMenuColor` rather than the photograph: the plist draws the
+ * boot logo from the theme's photo, but at boot-screen size the photo reads as noise, and the
+ * request was for the theme colour with the ring on it. The colour is still the theme's own value,
+ * so each theme blinks its own colour.
+ */
+@Composable
+private fun BootRing(
+    theme: DopamineThemeKey,
+    alpha: Float,
+) {
+    Box(
+        modifier = Modifier
+            .size(132.dp)
+            .graphicsLayer { this.alpha = alpha },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(color = theme.actionMenuColor.copy(alpha = 1f))
+        }
         /*
-         * The real icon artwork, as a PNG: `@mipmap/ic_launcher` would resolve to the
-         * adaptive-icon XML on API 26+ and painterResource() throws on that. The xxxhdpi bitmap
-         * is the same artwork at 192 px.
+         * The ring is `DopamineLogo.pdf` rasterised once: the PDF is a vector, and painterResource
+         * only takes a vector *Android* drawable, not a PDF. The PNG is transparent inside and
+         * outside the band, so the theme colour shows through both.
          */
         Image(
-            painter = painterResource(R.drawable.dopamine_mark),
+            painter = painterResource(R.drawable.dopamine_ring),
             contentDescription = "Dopamine",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+/**
+ * The picture picked in Settings, read from the app's private directory.
+ *
+ * It is copied in at pick time rather than referenced by URI: a picker grant can be revoked once
+ * the process dies, and the boot sequence must not depend on something it cannot re-open.
+ */
+@Composable
+private fun CustomBootImage(
+    path: String?,
+    alpha: Float,
+) {
+    val bitmap = remember(path) {
+        path?.let { p ->
+            runCatching { BitmapFactory.decodeFile(p)?.asImageBitmap() }.getOrNull()
+        }
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
             modifier = Modifier
-                .size(128.dp)
-                .graphicsLayer { alpha = markAlpha.value },
+                .size(160.dp)
+                .graphicsLayer { this.alpha = alpha },
         )
-        AppleGlyph(
-            modifier = Modifier.graphicsLayer { alpha = appleAlpha.value },
-            size = 104.dp,
-        )
+    } else {
+        // No picture, or it could not be decoded: fall back to the ring rather than a blank frame.
+        BootRing(theme = LocalDopamineTheme.current, alpha = alpha)
     }
 }
 

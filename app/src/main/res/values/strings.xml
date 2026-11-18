@@ -26,7 +26,13 @@
     <!-- Exploit steps -->
     <string name="step_download_kernel">Downloading Kernel…</string>
     <string name="step_find_address">Finding Addresses</string>
-    <string name="step_exploit_kernel">Exploiting Kernel (ClearSword)</string>
+    <!--
+      The exploit step label. iOS builds it with
+      `[NSString stringWithFormat:DOLocalizedString(@"Exploiting Kernel (%@)"), kernelExploit.name]`,
+      so the name in brackets is whatever is selected in Settings at run time. A fixed
+      "Exploiting Kernel (ClearSword)" string used to sit here and always named the wrong exploit.
+    -->
+    <string name="step_exploit_kernel_fmt">Exploiting Kernel (%1$s)</string>
     <string name="step_prepare_environment">Preparing Environment</string>
     <string name="step_install_package_manager">Installing Package Manager</string>
     <string name="step_start_daemon">Starting Daemon</string>
@@ -77,6 +83,25 @@
     <string name="about_section_credits">Credits</string>
     <string name="about_original_authors">Original authors</string>
     <string name="about_ui_reference">UI reference</string>
+
+    <!--
+      Settings: Customization and Boot Logo.
+      The section names and row titles are the ones DOSettingsController builds:
+      Section_Customization / Theme, then Section_Boot_Logo / Enabled / Custom_Boot_Logo /
+      Select_Image. The iOS bundle ships these keys untranslated in most locales, so the English
+      wording here is the original rather than a new one.
+    -->
+    <string name="settings_section_customization">Customization</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_section_bootlogo">Boot Logo</string>
+    <string name="settings_bootlogo_enabled">Enabled</string>
+    <string name="settings_bootlogo_enabled_subtitle">Show the boot logo while jailbreaking</string>
+    <string name="settings_custom_bootlogo">Custom Boot Logo</string>
+    <string name="settings_custom_bootlogo_subtitle">Use your own image instead of the Dopamine logo</string>
+    <string name="settings_select_image">Select Image</string>
+    <string name="settings_select_image_none">No image selected</string>
+    <string name="settings_select_image_failed">Could not read that image</string>
+    <string name="cd_theme_preview">Theme preview</string>
 
     <!-- First-run wizard, shown when the jailbreak button is first pressed -->
     <string name="wizard_choose_package_manager">Choose a Package Manager</string>

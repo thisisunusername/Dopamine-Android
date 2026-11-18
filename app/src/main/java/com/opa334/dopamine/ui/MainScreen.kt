@@ -196,7 +196,9 @@ private fun ActionCard(content: @Composable () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(CardCorner))
-            .background(DopamineColors.Menu)
+            // The active theme's `actionMenuColor`, not a fixed grey: the card has to change with
+            // the background or the themes read as a photo swap with the same grey boxes on top.
+            .background(dopaminePalette.menu)
             .padding(horizontal = InnerPadding, vertical = InnerTopPadding),
     ) {
         content()
@@ -273,7 +275,7 @@ private fun JailbreakButton(
             .height(60.dp)
             .clip(RoundedCornerShape(CardCorner))
             .alpha(if (enabled) 1f else 0.6f)
-            .background(DopamineColors.Menu)
+            .background(dopaminePalette.menu)
             .clickable(
                 interactionSource = interaction,
                 indication = null,

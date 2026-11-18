@@ -16,7 +16,7 @@
 
     <string name="step_download_kernel">下载内核…</string>
     <string name="step_find_address">查找地址</string>
-    <string name="step_exploit_kernel">正在利用内核 (ClearSword)</string>
+    <string name="step_exploit_kernel_fmt">正在利用内核 (%1$s)</string>
     <string name="step_prepare_environment">准备环境</string>
     <string name="step_install_package_manager">安装包管理器</string>
     <string name="step_start_daemon">启动守护进程</string>
@@ -62,6 +62,18 @@
     <string name="about_section_credits">致谢</string>
     <string name="about_original_authors">原作者</string>
     <string name="about_ui_reference">界面参考</string>
+
+    <string name="settings_section_customization">自定义</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_section_bootlogo">开机 Logo</string>
+    <string name="settings_bootlogo_enabled">启用</string>
+    <string name="settings_bootlogo_enabled_subtitle">越狱时显示开机 Logo</string>
+    <string name="settings_custom_bootlogo">自定义开机 Logo</string>
+    <string name="settings_custom_bootlogo_subtitle">用你自己的图片代替 Dopamine 图标</string>
+    <string name="settings_select_image">选择图片</string>
+    <string name="settings_select_image_none">尚未选择图片</string>
+    <string name="settings_select_image_failed">无法读取该图片</string>
+    <string name="cd_theme_preview">主题预览</string>
 
     <string name="wizard_choose_package_manager">选择包管理器</string>
     <string name="wizard_set_sudo">设置 sudo 密码</string>

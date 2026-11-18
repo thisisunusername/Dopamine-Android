@@ -29,6 +29,11 @@ object JailbreakState {
     private const val KEY_DAEMON_PID = "daemon_pid"
     private const val KEY_HIDDEN = "jailbreak_hidden"
     private const val KEY_EXPLOIT = "kernel_exploit"
+    private const val KEY_THEME = "theme"
+    private const val KEY_BOOTLOGO = "bootlogoEnabled"
+    private const val KEY_CUSTOM_BOOTLOGO = "customBootlogoEnabled"
+    private const val KEY_CUSTOM_BOOTLOGO_PATH = "customBootlogo"
+    private const val KEY_ICON_ALIAS = "icon_alias"
 
     fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -121,5 +126,84 @@ object JailbreakState {
 
     fun setSelectedExploit(context: Context, value: String) {
         prefs(context).edit().putString(KEY_EXPLOIT, value).apply()
+    }
+
+    /**
+     * The theme picked in Settings.
+     *
+     * Stored under the same key the iOS preferences domain uses (`theme`), so the value means the
+     * same thing on both sides. Null means "never chosen" and the caller falls back to the first
+     * theme, which is what `DOThemeManager -enabledTheme` does.
+     */
+    fun theme(context: Context): String? = prefs(context).getString(KEY_THEME, null)
+
+    fun setTheme(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_THEME, value).apply()
+    }
+
+    /**
+     * `bootlogoEnabled`, defaulting to true as in `DOSettingsController`
+     * (`setProperty:@YES forKey:@"default"`).
+     *
+     * On iOS this decides whether the boot logo is written to the device at all. There is no boot
+     * partition this app may touch, so it decides what the run *shows* instead: with it on, the
+     * blackout blinks the Dopamine ring and then the Apple glyph; with it off, a single static
+     * "lying" Apple is shown and nothing blinks.
+     */
+    fun bootlogoEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_BOOTLOGO, true)
+
+    fun setBootlogoEnabled(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BOOTLOGO, value).apply()
+    }
+
+    /** `customBootlogoEnabled`, default false. Only reachable while bootlogo is on, as on iOS. */
+    fun customBootlogoEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_CUSTOM_BOOTLOGO, false)
+
+    /**
+     * Turning the custom logo off also drops the stored copy.
+     *
+     * Keeping a picture in the private directory while the switch says it is unused would leave a
+     * file behind that nothing can see, and it is the user's own image - it should not outlive the
+     * setting that put it there.
+     */
+    fun setCustomBootlogoEnabled(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_CUSTOM_BOOTLOGO, value).apply()
+        if (!value) clearCustomBootlogoImage(context)
+    }
+
+    /**
+     * Where the picked image was copied to, inside the app's private files directory.
+     *
+     * A URI returned by the system picker is not guaranteed to stay readable - the grant can be
+     * revoked when the process dies - so the picture is copied in and the copy is what the boot
+     * sequence reads.
+     */
+    fun customBootlogoPath(context: Context): String? =
+        prefs(context).getString(KEY_CUSTOM_BOOTLOGO_PATH, null)
+
+    fun setCustomBootlogoPath(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_CUSTOM_BOOTLOGO_PATH, value).apply()
+    }
+
+    fun clearCustomBootlogoImage(context: Context) {
+        val path = prefs(context).getString(KEY_CUSTOM_BOOTLOGO_PATH, null)
+        if (!path.isNullOrEmpty()) runCatching { java.io.File(path).delete() }
+        prefs(context).edit().remove(KEY_CUSTOM_BOOTLOGO_PATH).apply()
+    }
+
+    /**
+     * Which launcher icon the theme wants.
+     *
+     * Android cannot repaint an icon at runtime: the launcher reads whatever `activity-alias`
+     * entries the manifest declares and the package manager keeps showing whichever one is
+     * enabled. So each theme gets its own alias carrying that theme's artwork, and switching theme
+     * enables one alias and disables the rest. [KEY_ICON_ALIAS] is only used to know what to
+     * re-apply on launch after a process restart.
+     */
+    fun iconAlias(context: Context): String? = prefs(context).getString(KEY_ICON_ALIAS, null)
+
+    fun setIconAlias(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_ICON_ALIAS, value).apply()
     }
 }
