@@ -595,7 +595,7 @@ fun AboutScreen(
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(
         text = text,
         color = DopamineColors.TextSecondary,
@@ -606,7 +606,7 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
+internal fun SettingsCard(content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -620,7 +620,7 @@ private fun SettingsCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun CardLine() {
+internal fun CardLine() {
     HorizontalDivider(
         color = DopamineColors.Separator,
         thickness = 0.5.dp,
