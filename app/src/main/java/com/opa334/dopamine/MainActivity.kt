@@ -438,6 +438,17 @@ private fun DopamineScreens(
                                 (context as? MainActivity)?.finish()
                             }
                         } else if (event.ok) {
+                            /*
+                             * A finished jailbreak clears "hidden".
+                             *
+                             * Hiding is how the jailbreak is taken away while its history is kept,
+                             * so the flag survives. Applying one again means there is a live
+                             * jailbreak on screen, and leaving the flag set would make Settings
+                             * claim it was still hidden - with an "Unhide Jailbreak" row that has
+                             * nothing to bring back.
+                             */
+                            JailbreakState.setHidden(context, false)
+                            hidden = false
                             onStartBlackout()
                         } else {
                             onClearOverlay()
