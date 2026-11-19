@@ -13,15 +13,23 @@
     <string name="action_jailbreak">越狱</string>
     <string name="action_jailbreaking">正在越狱</string>
     <string name="action_jailbroken">已越狱</string>
-
+    <string name="action_remove_jailbreak">移除越狱</string>
+    <string name="action_removing_jailbreak">正在移除越狱…</string>
     <string name="step_download_kernel">下载内核…</string>
     <string name="step_find_address">查找地址</string>
     <string name="step_exploit_kernel_fmt">正在利用内核 (%1$s)</string>
     <string name="step_prepare_environment">准备环境</string>
-    <string name="step_install_package_manager">安装包管理器</string>
+    <string name="step_initialize">初始化</string>
+    <string name="step_set_sudo_password_fmt">设置 sudo 密码：%1$s</string>
+    <string name="step_set_sudo_password_only_first_run">设置 sudo 密码（仅首次）</string>
+    <string name="step_set_package_manager_fmt">设置包管理器：%1$s</string>
+    <string name="step_set_package_manager_only_first_run">设置包管理器（仅首次）</string>
+    <string name="step_mount_bindfs">应用绑定挂载</string>
+    <string name="step_removing_jailbreak">正在移除越狱</string>
     <string name="step_start_daemon">启动守护进程</string>
     <string name="step_package_manager_unset">未选择</string>
     <string name="result_daemon_failed">守护进程没有启动</string>
+    <string name="result_remove_failed">守护进程仍在运行</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_section_jailbreak">越狱</string>
