@@ -667,7 +667,16 @@ private fun DopamineScreens(
                                 }
                                 refreshState()
                             } else {
-                                JailbreakEngine.removeJailbreak(context)
+                                /*
+                                 * Off the main thread: removeJailbreak stops a live process and
+                                 * deletes the staged directory, both of which block. Run from a
+                                 * `scope.launch` on the main dispatcher it froze the settings screen
+                                 * for the length of the teardown, which read as "the row did not
+                                 * respond".
+                                 */
+                                withContext(Dispatchers.IO) {
+                                    JailbreakEngine.removeJailbreak(context)
+                                }
                                 // removeJailbreak clears the "ever jailed" flag; hiding is not the
                                 // same as removing, so the history is kept.
                                 JailbreakState.markEverJailbroken(context)
