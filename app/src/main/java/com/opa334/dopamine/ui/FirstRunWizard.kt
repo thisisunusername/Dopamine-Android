@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -124,24 +125,42 @@ fun FirstRunWizard(
                         .clip(RoundedCornerShape(14.dp))
                         .background(dopaminePalette.menu),
                 ) {
-                    listOf(
-                        "sileo" to "Sileo",
-                        "zebra" to "Zebra",
-                    ).forEach { (key, label) ->
+                    /*
+                     * Same artwork as the Settings list, from the same enum.
+                     *
+                     * These were hand-written pairs of plain strings, so the first run showed two
+                     * bare words where every other screen in the app shows the app icons the iOS
+                     * original ships. Reusing PackageManagerOption keeps the two lists from ever
+                     * disagreeing about which managers exist, in what order, or how they look.
+                     */
+                    PackageManagerOption.entries.forEach { option ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { packageManager = key }
-                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                                .clickable { packageManager = option.key }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text(
-                                text = label,
-                                color = DopamineColors.TextPrimary,
-                                fontSize = 16.sp,
-                            )
-                            if (packageManager == key) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // 32 dp, cropped into a rounded box: the row height stays uniform
+                                // whatever aspect the source icon has.
+                                Image(
+                                    painter = painterResource(option.icon),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = option.label,
+                                    color = DopamineColors.TextPrimary,
+                                    fontSize = 16.sp,
+                                )
+                            }
+                            if (packageManager == option.key) {
                                 Icon(
                                     imageVector = Icons.Filled.Check,
                                     contentDescription = stringResource(R.string.cd_selected),
