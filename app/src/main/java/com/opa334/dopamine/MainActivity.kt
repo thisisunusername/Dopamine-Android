@@ -323,9 +323,10 @@ private fun DopamineScreens(
 
     // Resolved during composition: the run is started from a coroutine, where stringResource()
     // is not allowed.
-    val titleJailbroken = stringResource(R.string.action_jailbroken)
     val titleJailbreak = stringResource(R.string.action_jailbreak)
     val titleJailbreaking = stringResource(R.string.action_jailbreaking)
+    val titleRemove = stringResource(R.string.action_remove_jailbreak)
+    val titleRemoving = stringResource(R.string.action_removing_jailbreak)
 
     /** Re-reads the daemon and pushes the result into the UI state. */
     suspend fun refreshState() {
@@ -335,21 +336,29 @@ private fun DopamineScreens(
         packageManager = JailbreakState.packageManager(context)
         ui = ui.copy(
             jailbroken = jailbroken,
-            title = if (jailbroken) titleJailbroken else titleJailbreak,
+            title = if (jailbroken) titleRemove else titleJailbreak,
             packageManager = packageManager,
             busy = false,
         )
     }
 
-    /** Starts the staged run. Called after the wizard (if any) has collected its answers. */
-    fun startRun() {
+    /**
+     * Starts the staged run in one direction or the other.
+     *
+     * [removing] only decides which label the button carries while the run is going and what the
+     * engine does at each end: the step list is the same, because applying and removing a jailbreak
+     * really do go through the same phases - the exploit runs either way, that is what gives the
+     * privileges to tear the environment down again.
+     */
+    fun startRun(removing: Boolean = false) {
         scope.launch {
             ui = ui.copy(
                 busy = true,
                 expanded = true,
                 progress = 0f,
-                title = titleJailbreaking,
-                rows = JailbreakEngine.steps(context, detailedLog, selectedExploit).map { LogRow(it.label) },
+                title = if (removing) titleRemoving else titleJailbreaking,
+                rows = JailbreakEngine.steps(context, detailedLog, selectedExploit, removing)
+                    .map { LogRow(it.label) },
             )
             val total = ui.rows.size
             JailbreakEngine.run(
@@ -358,6 +367,7 @@ private fun DopamineScreens(
                 // The exploit named in the log comes from this value; passing it explicitly keeps
                 // the log and the Settings selection from ever disagreeing.
                 exploit = selectedExploit,
+                removing = removing,
                 onEvent = { event ->
                     ui = ui.applyEvent(event, total)
                     if (event is StepEvent.Done) {
@@ -375,7 +385,35 @@ private fun DopamineScreens(
                          * whole flow, which is why the blink appeared to need two taps.
                          */
                         ui = ui.copy(expanded = false)
-                        if (event.ok) {
+                        if (event.ok && removing) {
+                            /*
+                             * A removal finishes by cleaning up and leaving.
+                             *
+                             * The blink is not played: it is the device coming back up, and
+                             * nothing comes back up after a removal. What is left to do is what a
+                             * removal means - stop the daemon, drop the staged files, unhide, forget
+                             * the wizard's answers so the next run is a first run again, and get out
+                             * of the app. A device with no jailbreak has nothing for this screen to
+                             * describe, and staying on it would show a Main that still had a log
+                             * from a run whose result no longer applies.
+                             */
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    JailbreakEngine.removeJailbreak(context)
+                                }
+                                JailbreakState.setHidden(context, false)
+                                JailbreakState.clearPackageManager(context)
+                                JailbreakState.clearSudoPassword(context)
+                                refreshState()
+                                onClearOverlay()
+                                context.startActivity(
+                                    android.content.Intent(android.content.Intent.ACTION_MAIN)
+                                        .addCategory(android.content.Intent.CATEGORY_HOME)
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                                (context as? MainActivity)?.finish()
+                            }
+                        } else if (event.ok) {
                             onStartBlackout()
                         } else {
                             onClearOverlay()
@@ -415,7 +453,7 @@ private fun DopamineScreens(
         packageManager = JailbreakState.packageManager(context)
         ui = ui.copy(
             jailbroken = jailbroken,
-            title = if (jailbroken) titleJailbroken else titleJailbreak,
+            title = if (jailbroken) titleRemove else titleJailbreak,
             packageManager = packageManager,
             deviceLine = DeviceProfile.read().let {
                 /*
@@ -448,28 +486,17 @@ private fun DopamineScreens(
                     progress = ui.progress,
                     onJailbreak = {
                         if (jailbroken) {
-                            // Already jailbroken: the card means "restart userspace", which is
-                            // what Dopamine does rather than re-running the exploit.
-                            scope.launch {
-                                onStartUserspace()
-                                /*
-                                 * The restart is awaited before the overlay is dismissed, not
-                                 * fired and forgotten.
-                                 *
-                                 * The blackout sequence matters because it hides the moment the
-                                 * daemon is killed and replaced. Starting the restart without
-                                 * waiting let the sequence finish first on a fast run, so the app
-                                 * came back on screen while the userspace was still being torn
-                                 * down - the blink then looked disconnected from the action it was
-                                 * supposed to cover. Awaiting it keeps the two in step, and the
-                                 * overlay is cleared here rather than from the animation callback.
-                                 */
-                                runCatching { JailbreakEngine.restartUserspace(context) }
-                                refreshState()
-                                // Cleared here, not by the animation: the blink has to outlast the
-                                // restart it is covering.
-                                onClearOverlay()
-                            }
+                            /*
+                             * Already jailbroken: the button now reads "Remove Jailbreak", and it
+                             * runs the same staged flow in reverse.
+                             *
+                             * It used to mean "restart userspace" here, which duplicated the
+                             * card's own row and left the jailbreak with no way to be undone from
+                             * the main screen. A removal is a real run: the exploit has to happen
+                             * again to get the privileges to tear the environment down, which is
+                             * why it walks the same steps and only differs in wording and outcome.
+                             */
+                            startRun(removing = true)
                         } else if (!JailbreakState.hasEverJailbroken(context) &&
                             JailbreakState.packageManager(context) == null
                         ) {
@@ -593,42 +620,21 @@ private fun DopamineScreens(
                         }
                     },
                     onRemoveJailbreak = {
-                        scope.launch {
-                            JailbreakEngine.removeJailbreak(context)
-                            JailbreakState.setHidden(context, false)
-                            /*
-                             * Forget the wizard's answers as well.
-                             *
-                             * The next run is a first run in the only sense that matters: there
-                             * is no bootstrap, no package manager installed, and no sudo
-                             * password in effect. Keeping the stored package manager meant the
-                             * wizard was skipped on the next tap - it checks
-                             * `packageManager == null` - so the user was dropped straight into a
-                             * run that never asked where to install anything, which is the
-                             * "no password and no package manager" behaviour this fixes.
-                             */
-                            JailbreakState.clearPackageManager(context)
-                            JailbreakState.clearSudoPassword(context)
-                        }
                         /*
-                         * Removal closes the app.
+                         * The settings row and the main button do the same thing.
                          *
-                         * Until now the screen simply went back to Main with the exploit still
-                         * marked as done and the daemon gone, so the app sat there in a state it
-                         * cannot describe. A jailbreak that has been removed has nothing left
-                         * running, and the honest thing is to leave: the next launch starts from
-                         * the beginning, which is what "Remove Jailbreak" means on iOS too - it
-                         * reboots the device.
+                         * Removal is a staged run now, not an instantly applied flag: it has to
+                         * exploit the kernel again to be able to tear the environment down, and the
+                         * user should watch it in the same log the jailbreak uses. This row
+                         * therefore only starts that run and returns to the main screen, where the
+                         * log is.
                          *
-                         * finish() rather than killProcess: this activity owns no other state,
-                         * and letting the system tear it down is the supported way out.
+                         * It used to call removeJailbreak() directly and close the app, which made
+                         * a removal a few silent file deletions with nothing to see and no way to
+                         * tell where one failed.
                          */
-                        context.startActivity(
-                            android.content.Intent(android.content.Intent.ACTION_MAIN)
-                                .addCategory(android.content.Intent.CATEGORY_HOME)
-                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                        (context as? MainActivity)?.finish()
+                        screen = Screen.Main
+                        startRun(removing = true)
                     },
                     onBack = { screen = Screen.Main },
                     onOpenExploits = { screen = Screen.Exploits },

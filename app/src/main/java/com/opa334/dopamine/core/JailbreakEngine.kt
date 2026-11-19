@@ -43,6 +43,12 @@ object JailbreakEngine {
 
     private const val STAGE_DIR = "dopamine"
 
+    /** Where the bootstrap would be unpacked, mirroring `"/basebin"` on iOS. */
+    private const val BOOTSTRAP_DIR = "basebin"
+
+    /** The mount points the bootstrap would be bound over; only their names are ever used. */
+    private const val MOUNT_DIR = "mounts"
+
     /**
      * The exploit Dopamine picks when nothing has been chosen.
      *
@@ -68,158 +74,290 @@ object JailbreakEngine {
         "6.3" to ("iOS 16.0" to "16.6"),
     )
 
-    fun steps(context: Context, detailed: Boolean, exploit: String? = null): List<ExploitStep> {
-        fun s(id: Int): String = context.getString(id)
+/**
+         * The staged flow, in the order the real thing performs it.
+         *
+         * iOS `-DOJailbreaker jailbreak` runs: exploit the kernel, elevate, bootstrap, install the
+         * package manager, start the daemon. The extra steps here are the parts that exist as real
+         * phases on iOS but have no single `sendLog` of their own - the boot-constant initialisation
+         * inside `-doExploitation`, and the mount of the bootstrap over `/usr` that `-mountBootstrap`
+         * performs - plus the two first-run questions the wizard answers, which the run otherwise
+         * silently depends on.
+         *
+         * [removing] reuses the same list because a removal goes through the same phases: the exploit
+         * has to run again to get the privileges needed to tear the environment down. Only the wording
+         * of the mount step changes, and [Done] reports a different outcome.
+         */
+        fun steps(
+            context: Context,
+            detailed: Boolean,
+            exploit: String? = null,
+            removing: Boolean = false,
+        ): List<ExploitStep> {
+            fun s(id: Int): String = context.getString(id)
 
-        val steps = mutableListOf<ExploitStep>()
+            val steps = mutableListOf<ExploitStep>()
 
-        steps += ExploitStep(s(R.string.step_download_kernel), 2_200L) { ctx ->
-            // The only thing this build can legitimately "download" is the device's own kernel
-            // string; faking a payload fetch would be a lie with no upside.
-            val kernel = ctx.device.kernel.ifEmpty { "unknown" }
-            if (!detailed) {
-                kernel
-            } else {
-                buildString {
-                    append("krnl=")
-                    append(kernel)
-                    append(" · rel=")
-                    append(ctx.device.androidRelease)
-                    append(" · sdk=")
-                    append(ctx.device.sdk)
-                    append(" · abi=")
-                    append(ctx.device.abi)
-                }
-            }
-        }
-
-        steps += ExploitStep(s(R.string.step_find_address), 2_200L) { ctx ->
-            /*
-             * A real exploit walks the kernel's Mach-O load commands to locate its symbols, then
-             * computes slide-adjusted addresses. None of that can happen without an exploit, but
-             * the search it would perform can be described in full: which kernel release, which
-             * sysctl nodes were readable, what the KASLR slide would be applied to, and how many
-             * candidate offsets the release maps to.
-             *
-             * Reporting the actual probes here is the difference between "detailed" meaning "more
-             * words" and meaning "the values this run really read".
-             */
-            if (!detailed) {
-                "opt"
-            } else {
-                val release = ctx.device.kernel.ifEmpty { "unknown" }
-                val matched = KERNEL_TABLE.entries.firstOrNull { (prefix, _) ->
-                    release.startsWith(prefix) || release.contains(prefix)
-                }
-
-                val probes = listOf(
-                    "/proc/sys/kernel/kptr_restrict",
-                    "/proc/sys/kernel/randomize_va_space",
-                    "/proc/sys/kernel/osrelease",
-                    "/proc/kallsyms",
-                ).joinToString(" · ") { path ->
-                    val state = runCatching {
-                        val f = File(path)
-                        when {
-                            !f.exists() -> "absent"
-                            !f.canRead() -> "denied"
-                            (f.length() > 4L * 1024 * 1024) -> "huge" // /proc/kallsyms is not seekable
-                            else -> "readable"
-                        }
-                    }.getOrDefault("error")
-                    "$path=$state"
-                }
-
-                buildString {
-                    append("kernel=")
-                    append(release)
-                    append(" · range=")
-                    append(matched?.value?.first ?: "unmapped")
-                    append("..")
-                    append(matched?.value?.second ?: "unmapped")
-                    append(" · slide=unresolved")
-                    append("\nprobes: ")
-                    append(probes)
-                    // Everything below is read from the device, not asserted: the page size, the
-                    // architecture of this process, and how much of /proc/kallsyms is actually
-                    // visible. On stock Android the symbol table is present but every address in
-                    // it reads as zero, which is precisely why an exploit would be needed.
-                    append("\npage=")
-                    append(kernelPageSize())
-                    append("K · arch=")
-                    append(ctx.device.abi)
-                    append(" · kallsyms=")
-                    append(kallsymsState())
-                    if (matched == null) {
-                        append("\nnote: kernel release does not match any known Dopamine target")
+            steps += ExploitStep(s(R.string.step_download_kernel), 2_200L) { ctx ->
+                // The only thing this build can legitimately "download" is the device's own kernel
+                // string; faking a payload fetch would be a lie with no upside.
+                val kernel = ctx.device.kernel.ifEmpty { "unknown" }
+                if (!detailed) {
+                    kernel
+                } else {
+                    buildString {
+                        append("krnl=")
+                        append(kernel)
+                        append(" · rel=")
+                        append(ctx.device.androidRelease)
+                        append(" · sdk=")
+                        append(ctx.device.sdk)
+                        append(" · abi=")
+                        append(ctx.device.abi)
                     }
                 }
             }
-        }
 
-        steps += ExploitStep(
-            // iOS: `sendLog:[NSString stringWithFormat:DOLocalizedString(@"Exploiting Kernel (%@)"),
-            // kernelExploit.name]` - the label is built from the selected exploit at run time.
-            // This used to be the fixed resource `Exploiting Kernel (ClearSword)`, so the log
-            // always claimed ClearSword even when Settings had a different exploit selected.
-            label = context.getString(
-                R.string.step_exploit_kernel_fmt,
-                exploit ?: JailbreakState.selectedExploit(context) ?: DEFAULT_EXPLOIT,
-            ),
-            durationMs = 3_200L,
-        ) { ctx ->
-            // The step the real thing would spend its time in. Here it performs the only
-            // privileged-looking work an unprivileged app can do: create its own staging area.
-            val dir = File(context.filesDir, STAGE_DIR).apply { mkdirs() }
-            if (!detailed) {
-                "done"
-            } else {
-                val entries = dir.list()?.size ?: 0
-                "staged=${dir.absolutePath} · entries=$entries · " +
-                    "uid=${android.os.Process.myUid()} · " +
-                    "dev=${ctx.device.manufacturer}/${ctx.device.model}"
-            }
-        }
-
-        steps += ExploitStep(s(R.string.step_prepare_environment), 1_800L) {
-            val shell = Daemon.resolveShell(context) ?: "none"
-            if (!detailed) {
-                "ok"
-            } else {
-                "shell=$shell · ldlp=${context.applicationInfo.nativeLibraryDir} · " +
-                    "files=${context.filesDir.absolutePath}"
-            }
-        }
-
-        steps += ExploitStep(s(R.string.step_install_package_manager), 1_500L) {
-            val pm = JailbreakState.packageManager(context)
-                ?: context.getString(R.string.step_package_manager_unset)
-            if (!detailed) {
-                pm
-            } else {
-                "pkg=$pm · sudo=${if (JailbreakState.sudoPassword(context).isNullOrEmpty()) "default(alpine)" else "set"} · " +
-                    "prefs=dopamine_prefs"
-            }
-        }
-
-        steps += ExploitStep(s(R.string.step_start_daemon), 1_300L) {
-            val pid = Daemon.start(context)
-            if (pid == null) {
-                // Surfaced as a failure by the caller; returning the reason keeps it in the log.
-                "daemon did not start"
-            } else {
-                JailbreakState.setDaemonPid(context, pid)
+            steps += ExploitStep(s(R.string.step_find_address), 2_200L) { ctx ->
+                /*
+                 * A real exploit walks the kernel's Mach-O load commands to locate its symbols, then
+                 * computes slide-adjusted addresses. None of that can happen without an exploit, but
+                 * the search it would perform can be described in full: which kernel release, which
+                 * sysctl nodes were readable, what the KASLR slide would be applied to, and how many
+                 * candidate offsets the release maps to.
+                 *
+                 * Reporting the actual probes here is the difference between "detailed" meaning "more
+                 * words" and meaning "the values this run really read".
+                 */
                 if (!detailed) {
-                    "pid $pid"
+                    "opt"
                 } else {
-                    val hb = Daemon.heartbeatFile(context)
-                    "pid=$pid · hb=${hb.absolutePath} · alive=${Daemon.isAlive(pid)}"
+                    val release = ctx.device.kernel.ifEmpty { "unknown" }
+                    val matched = KERNEL_TABLE.entries.firstOrNull { (prefix, _) ->
+                        release.startsWith(prefix) || release.contains(prefix)
+                    }
+
+                    val probes = listOf(
+                        "/proc/sys/kernel/kptr_restrict",
+                        "/proc/sys/kernel/randomize_va_space",
+                        "/proc/sys/kernel/osrelease",
+                        "/proc/kallsyms",
+                    ).joinToString(" · ") { path ->
+                        val state = runCatching {
+                            val f = File(path)
+                            when {
+                                !f.exists() -> "absent"
+                                !f.canRead() -> "denied"
+                                (f.length() > 4L * 1024 * 1024) -> "huge" // /proc/kallsyms is not seekable
+                                else -> "readable"
+                            }
+                        }.getOrDefault("error")
+                        "$path=$state"
+                    }
+
+                    buildString {
+                        append("kernel=")
+                        append(release)
+                        append(" · range=")
+                        append(matched?.value?.first ?: "unmapped")
+                        append("..")
+                        append(matched?.value?.second ?: "unmapped")
+                        append(" · slide=unresolved")
+                        append("\nprobes: ")
+                        append(probes)
+                        // Everything below is read from the device, not asserted: the page size, the
+                        // architecture of this process, and how much of /proc/kallsyms is actually
+                        // visible. On stock Android the symbol table is present but every address in
+                        // it reads as zero, which is precisely why an exploit would be needed.
+                        append("\npage=")
+                        append(kernelPageSize())
+                        append("K · arch=")
+                        append(ctx.device.abi)
+                        append(" · kallsyms=")
+                        append(kallsymsState())
+                        if (matched == null) {
+                            append("\nnote: kernel release does not match any known Dopamine target")
+                        }
+                    }
                 }
             }
-        }
 
-        return steps
-    }
+            steps += ExploitStep(
+                // iOS: `sendLog:[NSString stringWithFormat:DOLocalizedString(@"Exploiting Kernel (%@)"),
+                // kernelExploit.name]` - the label is built from the selected exploit at run time.
+                // This used to be the fixed resource `Exploiting Kernel (ClearSword)`, so the log
+                // always claimed ClearSword even when Settings had a different exploit selected.
+                label = context.getString(
+                    R.string.step_exploit_kernel_fmt,
+                    exploit ?: JailbreakState.selectedExploit(context) ?: DEFAULT_EXPLOIT,
+                ),
+                durationMs = 3_200L,
+            ) { ctx ->
+                // The step the real thing would spend its time in. Here it performs the only
+                // privileged-looking work an unprivileged app can do: create its own staging area.
+                val dir = File(context.filesDir, STAGE_DIR).apply { mkdirs() }
+                if (!detailed) {
+                    "done"
+                } else {
+                    val entries = dir.list()?.size ?: 0
+                    "staged=${dir.absolutePath} · entries=$entries · " +
+                        "uid=${android.os.Process.myUid()} · " +
+                        "dev=${ctx.device.manufacturer}/${ctx.device.model}"
+                }
+            }
+
+            steps += ExploitStep(s(R.string.step_prepare_environment), 1_800L) {
+                val shell = Daemon.resolveShell(context) ?: "none"
+                if (!detailed) {
+                    "ok"
+                } else {
+                    "shell=$shell · ldlp=${context.applicationInfo.nativeLibraryDir} · " +
+                        "files=${context.filesDir.absolutePath}"
+                }
+            }
+
+            /*
+             * Initialisation: what iOS does between the exploit returning and the first privileged
+             * operation.
+             *
+             * `-doExploitation` ends with `jbinfo_initialize_boot_constants()`,
+             * `libjailbreak_translation_init()` and `libjailbreak_IOSurface_primitives_init()`, all in
+             * one block that cannot fail individually. Its Android counterpart is the set of tables and
+             * directories the rest of the run reads - which is what this step actually creates.
+             */
+            steps += ExploitStep(s(R.string.step_initialize), 1_600L) {
+                val dir = File(context.filesDir, STAGE_DIR).apply { mkdirs() }
+                val bootstrap = File(dir, BOOTSTRAP_DIR).apply { mkdirs() }
+                val mounts = File(dir, MOUNT_DIR).apply { mkdirs() }
+                if (!detailed) {
+                    "ok"
+                } else {
+                    "base=${dir.name} · bootstrap=${bootstrap.name} · mounts=${mounts.name} · " +
+                        "page=${kernelPageSize()}K"
+                }
+            }
+
+            /*
+             * Sudo password: a first-run question, reported every run.
+             *
+             * The wizard asks for it exactly once - the value is stored under `dopamine_prefs` and the
+             * wizard checks for it - so on a later run this step has nothing to ask and says so. It is
+             * still a step because the environment genuinely depends on the value, and because a run
+             * whose wizard was cancelled would otherwise leave no trace of the default.
+             */
+            steps += ExploitStep(
+                label = if (JailbreakState.sudoPassword(context) == null) {
+                    context.getString(R.string.step_set_sudo_password_only_first_run)
+                } else {
+                    context.getString(
+                        R.string.step_set_sudo_password_fmt,
+                        if (JailbreakState.sudoPassword(context).isNullOrEmpty()) "default(alpine)" else "set",
+                    )
+                },
+                durationMs = 900L,
+            ) {
+                if (!detailed) {
+                    "ok"
+                } else {
+                    // Never the password itself: only whether one is in effect and where it came from.
+                    "sudo=" + (if (JailbreakState.sudoPassword(context).isNullOrEmpty()) {
+                        "default(alpine)"
+                    } else {
+                        "user"
+                    }) + " · prefs=dopamine_prefs"
+                }
+            }
+
+            steps += ExploitStep(
+                label = if (JailbreakState.packageManager(context) == null) {
+                    context.getString(R.string.step_set_package_manager_only_first_run)
+                } else {
+                    context.getString(
+                        R.string.step_set_package_manager_fmt,
+                        JailbreakState.packageManager(context).orEmpty(),
+                    )
+                },
+                durationMs = 1_000L,
+            ) {
+                val pm = JailbreakState.packageManager(context)
+                    ?: context.getString(R.string.step_package_manager_unset)
+                if (!detailed) {
+                    pm
+                } else {
+                    "pkg=$pm · firstRun=${JailbreakState.packageManager(context) == null} · " +
+                        "prefs=dopamine_prefs"
+                }
+            }
+
+            /*
+             * Bind mounts.
+             *
+             * `-mountBootstrap` is where iOS overlays the bootstrap over /usr, and it is the phase that
+             * makes the environment coherent. On Android that mount is impossible without root, so the
+             * step records the mount points the environment would use and, when the run is a removal,
+             * says so in its label instead of pretending to apply anything.
+             */
+            steps += ExploitStep(
+                label = if (removing) {
+                    context.getString(R.string.step_removing_jailbreak)
+                } else {
+                    context.getString(R.string.step_mount_bindfs)
+                },
+                durationMs = 1_500L,
+            ) { ctx ->
+                val dir = File(context.filesDir, STAGE_DIR)
+                val mounts = File(dir, MOUNT_DIR).apply { mkdirs() }
+                if (!detailed) {
+                    if (removing) "removing" else "ok"
+                } else {
+                    val pairs = listOf("/usr", "/var", "/etc", "/Applications").joinToString(" · ") {
+                        "$it->${File(mounts, it.trim('/')).path.substringAfterLast('/')}"
+                    }
+                    "${if (removing) "unmount" else "mount"}: $pairs · abi=${ctx.device.abi}"
+                }
+            }
+
+            /*
+             * Daemon last.
+             *
+             * On a removal the daemon is not started - it is what is being taken away - so this step
+             * stops it instead. Both leave [Done] reading the real state rather than trusting a
+             * return value.
+             */
+            steps += ExploitStep(
+                label = if (removing) {
+                    context.getString(R.string.step_removing_jailbreak)
+                } else {
+                    context.getString(R.string.step_start_daemon)
+                },
+                durationMs = 1_300L,
+            ) {
+                if (removing) {
+                    JailbreakEngine.stopDaemon(context)
+                    if (!detailed) {
+                        "stopped"
+                    } else {
+                        "daemon=stopped · pid=${JailbreakState.daemonPid(context)}"
+                    }
+                } else {
+                    val pid = Daemon.start(context)
+                    if (pid == null) {
+                        // Surfaced as a failure by the caller; returning the reason keeps it in the log.
+                        "daemon did not start"
+                    } else {
+                        JailbreakState.setDaemonPid(context, pid)
+                        if (!detailed) {
+                            "pid $pid"
+                        } else {
+                            val hb = Daemon.heartbeatFile(context)
+                            "pid=$pid · hb=${hb.absolutePath} · alive=${Daemon.isAlive(pid)}"
+                        }
+                    }
+                }
+            }
+
+            return steps
+        }
 
     /**
      * The kernel's page size, in KiB, as reported by the running system.
@@ -319,12 +457,13 @@ object JailbreakEngine {
         context: Context,
         detailed: Boolean,
         exploit: String? = null,
+        removing: Boolean = false,
         onEvent: (StepEvent) -> Unit,
     ) {
         val device = DeviceProfile.read()
         val ctx = ExploitContext(device)
         val chosen = exploit ?: JailbreakState.selectedExploit(context) ?: DEFAULT_EXPLOIT
-        val list = steps(context, detailed, chosen)
+        val list = steps(context, detailed, chosen, removing)
 
         onEvent(
             StepEvent.Log(
@@ -363,6 +502,28 @@ object JailbreakEngine {
             onEvent(StepEvent.Progress((index + 1).toFloat() / list.size))
         }
 
+        /*
+         * A removal has nothing to prove except that the daemon is gone.
+         *
+         * The jailbreak path reads the daemon back because a step can report a pid that dies a
+         * moment later; the removal path has the mirror-image check, and it is the one that
+         * matters: if the process is still alive the environment was not removed, whatever the
+         * steps said.
+         */
+        if (removing) {
+            val stillUp = withContext(Dispatchers.IO) {
+                val pid = JailbreakState.daemonPid(context)
+                pid > 0 && Daemon.isAlive(context, pid)
+            }
+            if (stillUp) {
+                onEvent(StepEvent.Done(false, context.getString(R.string.result_daemon_failed)))
+            } else {
+                JailbreakState.clearEverJailbroken(context)
+                onEvent(StepEvent.Done(true, context.getString(R.string.action_jailbreak)))
+            }
+            return
+        }
+
         // Trust the daemon, not the step: it can report success and die a moment later.
         val alive = withContext(Dispatchers.IO) {
             val pid = JailbreakState.daemonPid(context)
@@ -394,6 +555,19 @@ object JailbreakEngine {
                 onEvent(StepEvent.Done(false, context.getString(R.string.result_daemon_failed)))
             }
         }
+    }
+
+    /**
+     * Stops the daemon without touching anything else.
+     *
+     * Used by a removal run: the daemon is going away, but the staging directory and the
+     * preferences are still needed until the run finishes, so this is deliberately not
+     * [removeJailbreak].
+     */
+    fun stopDaemon(context: Context) {
+        val pid = JailbreakState.daemonPid(context)
+        if (pid > 0) runCatching { Daemon.stop(pid) }
+        JailbreakState.clearDaemonPid(context)
     }
 
     /** "Remove jailbreak": stop the daemon and delete the staging directory. */

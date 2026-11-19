@@ -261,12 +261,12 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .height(50.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .clickable(enabled = jailbroken, onClick = onRemoveJailbreak),
+                        .clickable(enabled = !jailbroken, onClick = onRemoveJailbreak),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = stringResource(R.string.settings_remove_jailbreak),
-                        color = if (jailbroken) DopamineColors.Danger else DopamineColors.TextDisabled,
+                        color = if (!jailbroken) DopamineColors.Danger else DopamineColors.TextDisabled,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                     )

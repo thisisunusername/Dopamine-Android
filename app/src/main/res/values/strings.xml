@@ -22,6 +22,15 @@
     <string name="action_jailbreak">Jailbreak</string>
     <string name="action_jailbreaking">Jailbreaking</string>
     <string name="action_jailbroken">Jailbroken</string>
+    <!--
+      The primary button is a switch, not a status readout.
+
+      It reads "Jailbreak" while the exploit is not applied and "Remove Jailbreak" once it is, so
+      the same control both starts and undoes a run. "Jailbroken" is kept for the header/subtitle,
+      where it is a state rather than an action.
+    -->
+    <string name="action_remove_jailbreak">Remove Jailbreak</string>
+    <string name="action_removing_jailbreak">Removing Jailbreak…</string>
 
     <!-- Exploit steps -->
     <string name="step_download_kernel">Downloading Kernel…</string>
@@ -34,10 +43,40 @@
     -->
     <string name="step_exploit_kernel_fmt">Exploiting Kernel (%1$s)</string>
     <string name="step_prepare_environment">Preparing Environment</string>
-    <string name="step_install_package_manager">Installing Package Manager</string>
+    <!--
+      The initialisation step.
+
+      iOS has no single label for it: `-doExploitation` initialises the boot constants, the
+      translation layer and the IOSurface primitives in one uninterruptible block right after the
+      exploit returns, then proceeds to `-elevatePrivileges`. It is a real phase of the run, so it
+      is named here rather than folded into the exploit step.
+    -->
+    <string name="step_initialize">Initialising</string>
+    <!--
+      Sudo password and package manager are first-run questions.
+
+      Both are asked by the wizard on a first run, before this step would reach them, so on every
+      later run the step has nothing to ask. `%1$s` is the value already in effect, which is what
+      makes the step's log line useful: it says what the environment will use, not that it skipped
+      something.
+    -->
+    <string name="step_set_sudo_password_fmt">Setting Sudo Password: %1$s</string>
+    <string name="step_set_sudo_password_only_first_run">Setting Sudo Password (first run only)</string>
+    <string name="step_set_package_manager_fmt">Setting Package Manager: %1$s</string>
+    <string name="step_set_package_manager_only_first_run">Setting Package Manager (first run only)</string>
+    <string name="step_mount_bindfs">Applying Bind Mounts</string>
+    <!--
+      Shown when the run is a removal rather than a jailbreak.
+
+      Removing has the same phases - the same exploit, the same userspace teardown - so it shares
+      this step list; only the wording differs, because a removal is not "applying" anything.
+    -->
+    <string name="step_removing_jailbreak">Removing Jailbreak</string>
     <string name="step_start_daemon">Starting Daemon</string>
     <string name="step_package_manager_unset">not selected</string>
     <string name="result_daemon_failed">The daemon did not start</string>
+    <!-- A removal that leaves the daemon running did not remove anything. -->
+    <string name="result_remove_failed">The daemon is still running</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
