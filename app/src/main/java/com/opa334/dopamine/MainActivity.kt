@@ -309,6 +309,17 @@ private fun DopamineScreens(
     var jailbroken by remember { mutableStateOf(false) }
     var detailedLog by remember { mutableStateOf(JailbreakState.detailedLog(context)) }
     var packageManager by remember { mutableStateOf(JailbreakState.packageManager(context)) }
+    /*
+     * "Hidden" is a preference, but it cannot be read straight from the store during
+     * composition.
+     *
+     * It used to be passed as `JailbreakState.isHidden(context)` at the call site. SharedPreferences
+     * is not a snapshot state, so writing it from the toggle changed nothing the UI could observe:
+     * the settings row kept saying "Hide Jailbreak" after the jailbreak had been hidden, and
+     * tapping it again only re-ran the hide. Holding it in a mutable state and assigning it
+     * wherever it is written is what makes the label flip.
+     */
+    var hidden by remember { mutableStateOf(JailbreakState.isHidden(context)) }
 
     var screen by remember { mutableStateOf(Screen.Main) }
     var ui by remember { mutableStateOf(MainUiState()) }
@@ -325,7 +336,14 @@ private fun DopamineScreens(
     // is not allowed.
     val titleJailbreak = stringResource(R.string.action_jailbreak)
     val titleJailbreaking = stringResource(R.string.action_jailbreaking)
-    val titleRemove = stringResource(R.string.action_remove_jailbreak)
+    val titleJailbroken = stringResource(R.string.action_jailbroken)
+    /*
+     * Only the removal, started from Settings, needs these two.
+     *
+     * The main button deliberately does not: on iOS it reads "Jailbroken" once the device has
+     * one and stops being a way out, and removal lives in Settings. Putting "Remove Jailbreak"
+     * on the main button made the screen offer an undo that the original keeps two taps away.
+     */
     val titleRemoving = stringResource(R.string.action_removing_jailbreak)
 
     /** Re-reads the daemon and pushes the result into the UI state. */
@@ -334,9 +352,15 @@ private fun DopamineScreens(
         // blocking spawn rather than a lookup.
         jailbroken = withContext(Dispatchers.IO) { JailbreakState.isJailbroken(context) }
         packageManager = JailbreakState.packageManager(context)
+        /*
+         * Re-read here as well, so every path that changes the flag ends up correct without
+         * remembering to assign it: a finished removal clears it, and so does anything else that
+         * touches the store behind the screen's back.
+         */
+        hidden = JailbreakState.isHidden(context)
         ui = ui.copy(
             jailbroken = jailbroken,
-            title = if (jailbroken) titleRemove else titleJailbreak,
+            title = if (jailbroken) titleJailbroken else titleJailbreak,
             packageManager = packageManager,
             busy = false,
         )
@@ -451,9 +475,10 @@ private fun DopamineScreens(
          */
         jailbroken = withContext(Dispatchers.IO) { JailbreakState.isJailbroken(context) }
         packageManager = JailbreakState.packageManager(context)
+        hidden = JailbreakState.isHidden(context)
         ui = ui.copy(
             jailbroken = jailbroken,
-            title = if (jailbroken) titleRemove else titleJailbreak,
+            title = if (jailbroken) titleJailbroken else titleJailbreak,
             packageManager = packageManager,
             deviceLine = DeviceProfile.read().let {
                 /*
@@ -487,16 +512,37 @@ private fun DopamineScreens(
                     onJailbreak = {
                         if (jailbroken) {
                             /*
-                             * Already jailbroken: the button now reads "Remove Jailbreak", and it
-                             * runs the same staged flow in reverse.
+                             * Already jailbroken: the button reads "Jailbroken" and means
+                             * "restart userspace", which is what Dopamine does rather than
+                             * re-running the exploit.
                              *
-                             * It used to mean "restart userspace" here, which duplicated the
-                             * card's own row and left the jailbreak with no way to be undone from
-                             * the main screen. A removal is a real run: the exploit has to happen
-                             * again to get the privileges to tear the environment down, which is
-                             * why it walks the same steps and only differs in wording and outcome.
+                             * It briefly ran the removal flow here. That was wrong: the main
+                             * button is not the undo. On iOS a jailbroken device's main button
+                             * resprings, and removal is a separate entry in Settings, behind a
+                             * screen the user has to deliberately open. Turning the front door
+                             * into the exit meant a single stray tap could tear the jailbreak
+                             * down with no confirmation.
                              */
-                            startRun(removing = true)
+                            scope.launch {
+                                onStartUserspace()
+                                /*
+                                 * The restart is awaited before the overlay is dismissed, not
+                                 * fired and forgotten.
+                                 *
+                                 * The blackout sequence matters because it hides the moment the
+                                 * daemon is killed and replaced. Starting the restart without
+                                 * waiting let the sequence finish first on a fast run, so the app
+                                 * came back on screen while the userspace was still being torn
+                                 * down - the blink then looked disconnected from the action it was
+                                 * supposed to cover. Awaiting it keeps the two in step, and the
+                                 * overlay is cleared here rather than from the animation callback.
+                                 */
+                                runCatching { JailbreakEngine.restartUserspace(context) }
+                                refreshState()
+                                // Cleared here, not by the animation: the blink has to outlast the
+                                // restart it is covering.
+                                onClearOverlay()
+                            }
                         } else if (!JailbreakState.hasEverJailbroken(context) &&
                             JailbreakState.packageManager(context) == null
                         ) {
@@ -578,7 +624,7 @@ private fun DopamineScreens(
                     },
                     packageManager = packageManager,
                     jailbroken = jailbroken,
-                    hidden = JailbreakState.isHidden(context),
+                    hidden = hidden,
                     selectedExploit = selectedExploit,
                     theme = theme,
                     onOpenThemes = { screen = Screen.Themes },
@@ -607,7 +653,18 @@ private fun DopamineScreens(
                         scope.launch {
                             if (JailbreakState.isHidden(context)) {
                                 val ok = JailbreakEngine.restartUserspace(context)
-                                JailbreakState.setHidden(context, !ok)
+                                /*
+                                 * Only a successful restart counts as unhidden.
+                                 *
+                                 * If the daemon did not come back, leaving the flag set keeps the UI
+                                 * honest: the device really is still hidden, and the row still says
+                                 * "Unhide Jailbreak" so the user can retry. Clearing it there would
+                                 * claim a jailbreak that is not running.
+                                 */
+                                if (ok) {
+                                    JailbreakState.setHidden(context, false)
+                                    hidden = false
+                                }
                                 refreshState()
                             } else {
                                 JailbreakEngine.removeJailbreak(context)
@@ -615,6 +672,7 @@ private fun DopamineScreens(
                                 // same as removing, so the history is kept.
                                 JailbreakState.markEverJailbroken(context)
                                 JailbreakState.setHidden(context, true)
+                                hidden = true
                                 refreshState()
                             }
                         }

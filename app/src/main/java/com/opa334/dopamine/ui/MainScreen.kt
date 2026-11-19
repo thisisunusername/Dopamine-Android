@@ -194,14 +194,11 @@ fun MainScreen(
                 jailbroken = jailbroken,
                 busy = busy,
                 /*
-                 * The button is a switch, so it stays live once the device is jailbroken: the
-                 * label has become "Remove Jailbreak" and the tap runs the same staged flow with
-                 * `removing = true`.
-                 *
-                 * It used to go grey and stop accepting taps in that state, which made the only
-                 * way out a trip through Settings. Only a run in progress disables it now.
+                 * Once the device is jailbroken the button has nothing left to do: it reads
+                 * "Jailbroken" and stops accepting taps. Removal is not its job - it lives in
+                 * Settings, where the user has to go on purpose.
                  */
-                enabled = !busy,
+                enabled = !busy && !jailbroken,
                 onClick = onJailbreak,
             )
 

@@ -201,6 +201,11 @@ fun SettingsScreen(
          *
          * The row is always present but disabled until there is a jailbreak to hide. Hiding it
          * instead made the section look like it did not exist.
+         *
+         * `jailbroken || hidden` and not just `jailbroken`: hiding removes the marker, so the very
+         * act of hiding flipped `jailbroken` to false and greyed out the row that had just become
+         * "Unhide Jailbreak". The one state where unhiding is the only thing left to do was the one
+         * state where it could not be tapped.
          */
         SectionLabel(stringResource(R.string.settings_section_actions))
         SettingsCard {
@@ -210,7 +215,7 @@ fun SettingsScreen(
                     else R.string.settings_hide_jailbreak,
                 ),
                 selected = false,
-                enabled = jailbroken,
+                enabled = jailbroken || hidden,
                 onClick = onToggleHidden,
             )
             CardLine()
@@ -261,12 +266,12 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .height(50.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .clickable(enabled = !jailbroken, onClick = onRemoveJailbreak),
+                        .clickable(enabled = jailbroken, onClick = onRemoveJailbreak),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = stringResource(R.string.settings_remove_jailbreak),
-                        color = if (!jailbroken) DopamineColors.Danger else DopamineColors.TextDisabled,
+                        color = if (jailbroken) DopamineColors.Danger else DopamineColors.TextDisabled,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                     )
