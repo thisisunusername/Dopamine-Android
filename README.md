@@ -180,5 +180,17 @@ build this reproduces:
 
 ## Licence
 
-The original Dopamine is MIT-licensed. This recreation follows the same terms. The Apple glyph
-is drawn from scratch and is not a redistributed Apple asset.
+**GPL-2.0-or-later.** The full text is in [LICENSE](LICENSE), the copyright and third-party
+notices in [COPYRIGHT](COPYRIGHT), and the SPDX identifier is `GPL-2.0-or-later` — the licence
+the text itself applies when a project says "version 2 or later", which is the usual reading of
+"GPL 2" and keeps the code usable in GPLv3 projects later.
+
+The original Dopamine is MIT-licensed and none of its code is present here, so no licence
+conflict arises: what this project reimplements is the interface, which is expressed in code
+written from scratch. The Apple glyph is drawn from scratch and is not a redistributed Apple
+asset.
+
+The licence text is also copied into the APK at `assets/LICENSE` and `assets/COPYRIGHT`, because
+a release download is the copy most people actually get: GPL section 1 asks for the terms to
+travel with it, and someone who finds the APK somewhere other than the repository should not
+have to hunt for them.

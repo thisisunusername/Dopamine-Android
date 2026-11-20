@@ -1,3 +1,12 @@
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * See LICENSE at the repository root. Clauses 1 and 3 of the GPL only need the
+ * licence text to travel with a copy, so `copyLicenceIntoApk` below puts it
+ * inside the APK's assets: the repository ships the text, but a five-megabyte
+ * APK attached to a release would otherwise be the "object code" the licence
+ * talks about without its terms next to it.
+ */
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -111,4 +120,28 @@ dependencies {
      */
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+/*
+ * Put the licence inside the APK.
+ *
+ * GPL-2.0 section 1 requires the licence to accompany every copy that is
+ * distributed, and an APK downloaded from a release page is such a copy: the
+ * person who has the file may never look at the repository. assets/ is readable
+ * without unpacking anything clever, and merging into the existing assets
+ * directory instead of declaring `assets.srcDirs` keeps the Java-generated
+ * sources that default directory already carries.
+ *
+ * `rootProject.file` and not `file`: this file is evaluated in app/, and the
+ * licence lives at the repository root.
+ */
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            tasks.register<Copy>("copyLicenceIntoAssets${variant.name.replaceFirstChar { it.uppercase() }}") {
+                from(rootProject.file("LICENSE"))
+                from(rootProject.file("COPYRIGHT"))
+                into(layout.buildDirectory.dir("generated/licenceAssets/"))
+            }
+        ) { it.outputDir }
+    }
 }
